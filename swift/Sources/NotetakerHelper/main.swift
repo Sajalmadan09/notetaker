@@ -208,9 +208,13 @@ func transcribe(_ wav: Data) -> String? {
     request.httpBody = body
     let sema = DispatchSemaphore(value: 0)
     var text: String?
-    URLSession.shared.dataTask(with: request) { data, _, _ in
+    URLSession.shared.dataTask(with: request) { data, resp, err in
         if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             text = obj["text"] as? String
+        }
+        if text == nil {
+            trace(["event": "asr_http_error", "status": (resp as? HTTPURLResponse)?.statusCode ?? -1,
+                   "error": err?.localizedDescription ?? "", "body": String(data: data ?? Data(), encoding: .utf8)?.prefix(200).description ?? ""])
         }
         sema.signal()
     }.resume()
