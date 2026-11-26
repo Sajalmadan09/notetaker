@@ -27,6 +27,14 @@ from .diarize import Diarizer
 from .pipeline import transcribe_meeting
 
 app = FastAPI(title="on-desktop-notetaker")
+
+
+@app.middleware("http")
+async def no_cache(request, call_next):
+    resp = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-cache"  # UI ships inside the app; always revalidate
+    return resp
 ASR = Int4Asr()
 TORCH_ASR = TorchAsr()
 DIARIZER = Diarizer()
