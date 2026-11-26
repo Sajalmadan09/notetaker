@@ -1,0 +1,42 @@
+[project]
+name = "on-desktop-notetaker"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "fastapi>=0.162.5",
+    "fpdf2>=2.8.9",
+    "huggingface-hub>=0.34,<1",
+    "numpy>=2.2.6",
+    "onnxruntime>=1.24.3",
+    "python-multipart>=0.0.32",
+    "sherpa-onnx>=2.0.3",
+    "soundfile>=0.14.0",
+    "uharfbuzz>=0.56.4",
+    "uvicorn>=0.54.0",
+]
+
+[project.optional-dependencies]
+bench = [
+    "accelerate>=1.15.0",
+    "datasets==3.6.0",
+    "jiwer>=4.0.0",
+    "librosa>=0.11.0",
+    "psutil>=7.2.2",
+    "sentencepiece>=0.2.3",
+    "torch>=2.14.1",
+    "torchaudio>=2.11.1",
+    "transformers>=4.57,<5",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.3",
+    "pytest>=9.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["notetaker"]

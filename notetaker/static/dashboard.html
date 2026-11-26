@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notetaker — recordings</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="topbar">
+  <span class="brand"><span class="dot" id="dot"></span>Notetaker</span>
+  <nav class="nav">
+    <a href="/">Record</a>
+    <a href="/dashboard.html" aria-current="page">Recordings</a>
+  </nav>
+</div>
+<main class="container">
+  <div class="pagehead">
+    <h1>Recordings</h1>
+    <p>Meetings and dictations, stored on this machine only. Play back, read, export.</p>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="toolbar">
+    <label class="field grow">Search
+      <input class="input" id="q" type="search" placeholder="Search transcripts…  ( / )">
+    </label>
+    <label class="field">Source
+      <select id="src">
+        <option value="all">all</option>
+        <option value="meeting">meetings</option>
+        <option value="dictation">dictations</option>
+      </select>
+    </label>
+    <button class="btn" id="refresh">Refresh</button>
+  </div>
+  <div id="list">
+    <div class="skeleton skel-card"></div>
+    <div class="skeleton skel-card"></div>
+  </div>
+</main>
+<div class="toasts" id="toasts"></div>
+<script>
+const $ = id => document.getElementById(id);
+const COLORS = ["#b4552d","#3a6ea5","#4a7c59","#8a5a9e","#a58a3a","#5a8a8a","#a55a6e","#6a6a9e"];
+let rows = [], full = {};
+
+function toast(msg) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+async function load() {
+  $("list").innerHTML = '<div class="skeleton skel-card"></div><div class="skeleton skel-card"></div>';
+  try {
+    rows = await (await fetch("/api/history")).json();
+    $("dot").classList.remove("bad");
+  } catch (e) {
+    $("dot").classList.add("bad");
+    $("list").innerHTML = '<div class="empty"><p>Server unreachable.</p></div>';
+    return;
+  }
+  const mins = rows.reduce((a, r) => a + (r.duration_s || 0), 0) / 60;
+  const dict = rows.filter(r => r.source === "dictation").length;
+  $("stats").innerHTML = `
+    <div class="stat"><b>${rows.length}</b><span>recordings</span></div>
+    <div class="stat"><b>${mins.toFixed(1)}</b><span>minutes of audio</span></div>
+    <div class="stat"><b>${dict}</b><span>dictations</span></div>`;
+  full = {};
+  render();
+}
+
+function render() {
+  const q = $("q").value.trim().toLowerCase();
+  const src = $("src").value;
+  const shown = rows.filter(r =>
+    (src === "all" || (r.source || "meeting") === src) &&
+    (!q || (r.preview || "").toLowerCase().includes(q)));
+  if (!shown.length) {
+    $("list").innerHTML = `<div class="empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 3v10m0 0a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3zm-7-3v1a7 7 0 0 0 14 0v-1M12 17v4m-4 0h8"/>
+      </svg>
+      <p>${rows.length ? "Nothing matches your filter." : "No recordings yet. Record or dictate — completed sessions appear here with audio and exports."}</p>
+    </div>`;
+    return;
+  }
+  $("list").innerHTML = shown.map(r => `
+    <div class="card" id="rec-${r.id}">
+      <div class="meta">
+        <b>${r.ts}</b>
+        <span class="badge ${r.source === "dictation" ? "acc" : ""}">${r.source === "dictation" ? "🎙 dictation" : "meeting"}</span>
+        ${r.verdict ? `<span class="badge ${r.verdict === "verified_before_after" ? "ok" : "warn"}">${r.verdict}</span>` : ""}
+        <span class="badge">${r.lang}</span>
+        <span>${r.duration_s}s · ${r.turn_count} turns</span>
+      </div>
+      ${r.audio ? `<audio controls preload="none" src="/api/history/${r.id}/audio"></audio>` : ""}
+      <div class="turns"><div class="skeleton" style="height:48px"></div></div>
+      <div class="exports">
+        <a class="btn small" href="/api/history/${r.id}/export?fmt=md" download>Markdown</a>
+        <a class="btn small" href="/api/history/${r.id}/export?fmt=txt" download>Text</a>
+        <a class="btn small" href="/api/history/${r.id}/export?fmt=pdf" download>PDF</a>
+        <button class="btn small ghost" data-copy="${r.id}">Copy transcript</button>
+      </div>
+    </div>`).join("");
+  for (const r of shown) hydrate(r.id);
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+    const rec = full[b.dataset.copy] || await (await fetch("/api/history/" + b.dataset.copy)).json();
+    const text = (rec.turns || []).map(t => `speaker_${String(t.speaker).padStart(2, "0")} [${t.start.toFixed(1)}-${t.end.toFixed(1)}]: ${t.text}`).join("\n");
+    await navigator.clipboard.writeText(text);
+    toast("Transcript copied");
+  });
+}
+
+async function hydrate(id) {
+  const rec = await (await fetch("/api/history/" + id)).json();
+  full[id] = rec;
+  const box = document.querySelector(`#rec-${id} .turns`);
+  if (!box) return;
+  box.innerHTML = (rec.turns || []).map(t => `
+    <div class="turn" style="border-color:${COLORS[t.speaker % COLORS.length]}">
+      <div class="who">speaker ${t.speaker} · ${t.start.toFixed(1)}s – ${t.end.toFixed(1)}s</div>
+      <div class="txt"></div>
+    </div>`).join("") || '<div class="empty"><p>no speech detected</p></div>';
+  [...box.querySelectorAll(".txt")].forEach((el, i) => el.textContent = rec.turns[i].text);
+}
+
+$("refresh").onclick = load;
+$("q").oninput = render;
+$("src").onchange = render;
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement.tagName !== "INPUT") { e.preventDefault(); $("q").focus(); }
+});
+load();
+</script>
+</body>
+</html>

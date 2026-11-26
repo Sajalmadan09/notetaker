@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+data/
+results/
+models/
+swift/.build/
+.qwen/tmp/
+build/
+dist/
+rust/target/
+*.spec
+.DS_Store

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notetaker — first-run setup</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="topbar"><span class="brand"><span class="dot"></span>Notetaker setup</span></div>
+<main class="container" style="max-width:680px">
+  <div class="pagehead">
+    <h1>Welcome — let's get you set up</h1>
+    <p>Everything runs on this machine. Three steps, about a minute plus a one-time model download.</p>
+  </div>
+
+  <div class="card">
+    <div class="meta"><b>1 · License &amp; attribution</b><span class="badge" id="b-accept">pending</span></div>
+    <p style="font-size:var(--fs-2);color:var(--mut)">
+      Notetaker uses the Bodhan <i>indic-transcribe</i> model (Indic Open Model License:
+      attribution + share-alike), sherpa-onnx (Apache-2.0) with pyannote segmentation
+      (CC-BY-NC-4.0 — personal/non-commercial use) and 3D-Speaker embeddings, and
+      Noto fonts (OFL). Audio and notes never leave this device. By continuing you
+      accept these terms for local use.</p>
+    <label style="display:flex;gap:8px;align-items:center;font-size:var(--fs-2)">
+      <input type="checkbox" id="agree"> I accept the model licenses for local use</label>
+    <div class="exports"><button class="btn primary" id="accept" disabled>Accept &amp; continue</button></div>
+  </div>
+
+  <div class="card">
+    <div class="meta"><b>2 · Models</b><span class="badge" id="b-weights">checking…</span></div>
+    <p style="font-size:var(--fs-2);color:var(--mut)">
+      One-time download: int4 speech model (~700 MB) + diarization models (~45 MB).
+      Stored locally; afterwards Notetaker works fully offline.</p>
+    <div class="progress"><i id="dlbar"></i></div>
+    <div class="status" id="dlstatus"></div>
+    <div class="exports"><button class="btn" id="download">Download models</button></div>
+  </div>
+
+  <div class="card">
+    <div class="meta"><b>3 · Microphone</b><span class="badge" id="b-mic">untested</span></div>
+    <p style="font-size:var(--fs-2);color:var(--mut)">
+      Allow microphone access when prompted. The optional dictation helper also needs
+      Accessibility permission (System Settings → Privacy &amp; Security → Accessibility).</p>
+    <div class="exports"><button class="btn" id="mic">Test microphone</button></div>
+  </div>
+
+  <div class="exports" style="margin-top:16px">
+    <button class="btn primary" id="finish" disabled>Open Notetaker →</button>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+$("agree").onchange = () => $("accept").disabled = !$("agree").checked;
+$("accept").onclick = async () => {
+  await fetch("/api/setup/accept", { method: "POST" });
+  $("b-accept").textContent = "accepted"; $("b-accept").className = "badge ok";
+  $("accept").disabled = true;
+};
+$("download").onclick = async () => {
+  await fetch("/api/setup/download", { method: "POST" });
+  $("download").disabled = true;
+};
+$("mic").onclick = async () => {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach(t => t.stop());
+    $("b-mic").textContent = "ok"; $("b-mic").className = "badge ok";
+  } catch (e) {
+    $("b-mic").textContent = e.name; $("b-mic").className = "badge err";
+  }
+};
+$("finish").onclick = () => location.href = "/";
+async function poll() {
+  const s = await (await fetch("/api/setup/status")).json();
+  if (s.accepted) { $("b-accept").textContent = "accepted"; $("b-accept").className = "badge ok"; $("accept").disabled = true; }
+  const d = s.download;
+  $("dlbar").style.width = (d.percent || 0) + "%";
+  $("dlstatus").textContent = d.state === "running" ? d.detail :
+    d.state === "error" ? d.detail : d.state === "done" ? "download complete" : "";
+  $("dlstatus").className = d.state === "error" ? "status err" : "status";
+  if (s.weights_present) {
+    $("b-weights").textContent = "ready"; $("b-weights").className = "badge ok";
+    $("download").disabled = true;
+    $("finish").disabled = false;
+  } else {
+    $("b-weights").textContent = d.state === "running" ? "downloading…" : "missing";
+    $("b-weights").className = "badge warn";
+    $("download").disabled = d.state === "running";
+  }
+}
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
