@@ -6,14 +6,12 @@
 <title>Notetaker — offline Indic meeting notes</title>
 <link rel="stylesheet" href="/app.css?v=0.1.3">
 </head>
-<body>
-<div class="topbar">
+<body class="shell">
+<div class="shell-wrap" style="display:contents"><aside class="side">
   <span class="brand"><span class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg></span>Notetaker<span class="dot" id="dot" title="server status"></span></span>
-  <nav class="nav">
-    <a href="/" aria-current="page">Record</a>
-    <a href="/dashboard.html">Recordings</a>
-  </nav>
-</div>
+  <nav><a href="/" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>Record</a><a href="/dashboard.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Recordings</a></nav>
+  <div class="foot" id="foot">Local · offline</div>
+</aside><div class="main">
 <main class="container">
   <div class="pagehead">
     <h1>Capture the meeting.<br>Keep the notes.</h1>
@@ -66,6 +64,7 @@
     <div id="out" class="card"></div>
   </div>
 </main>
+</div></div>
 <div class="toasts" id="toasts"></div>
 <script>
 const $ = id => document.getElementById(id);
