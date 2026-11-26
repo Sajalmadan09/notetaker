@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import paths
 from .asr import INT4_REPO, cached_int4_dir
+from .asr_torch import FLEX_REPO
 
 STATE_PATH = paths.DATA / "setup.json"
 SEG_URL = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/"
@@ -45,6 +46,15 @@ def weights_present() -> bool:
     return SEG_MODEL.exists() and EMB_MODEL.exists()
 
 
+def flex_present() -> bool:
+    from .asr_torch import cached_official_dir
+    try:
+        cached_official_dir(FLEX_REPO)
+        return True
+    except Exception:
+        return False
+
+
 def needs_setup() -> bool:
     return not weights_present()
 
@@ -53,7 +63,8 @@ def status() -> dict:
     with LOCK:
         progress = dict(PROGRESS)
     return {"needs_setup": needs_setup(), "accepted": accepted(),
-            "weights_present": weights_present(), "download": progress}
+            "weights_present": weights_present(), "flex_present": flex_present(),
+            "download": progress}
 
 
 def _download_file(url: str, dest: Path, base_percent: float, span: float, label: str) -> None:
@@ -91,6 +102,36 @@ def _download_weights() -> None:
     if not EMB_MODEL.exists():
         _download_file(EMB_URL, EMB_MODEL, 95, 5, "speaker embeddings")
     _set(state="done", percent=100, detail="ready")
+
+
+def _download_flex() -> None:
+    from huggingface_hub import HfApi, hf_hub_download
+    _set(state="running", percent=0, detail="listing flex files")
+    skip = ("nemo/", "banner.png", "model-diagram.png")
+    files = [f for f in HfApi().list_repo_tree(FLEX_REPO, recursive=True)
+             if hasattr(f, "size") and not f.rfilename.startswith(skip)]
+    total = sum(f.size for f in files) or 1
+    done = 0
+    for f in files:
+        hf_hub_download(FLEX_REPO, f.rfilename)
+        done += f.size
+        _set(percent=100 * done / total, detail=f"code-mix model {done / 1e9:.1f}/{total / 1e9:.1f} GB")
+    _set(state="done", percent=100, detail="ready")
+
+
+def start_flex_download() -> None:
+    with LOCK:
+        if PROGRESS["state"] == "running":
+            return
+        PROGRESS.update(state="running", percent=0, detail="starting")
+
+    def run() -> None:
+        try:
+            _download_flex()
+        except Exception as e:
+            _set(state="error", detail=f"{type(e).__name__}: {e} (gated model: accept its license on huggingface.co and run `hf auth login`)")
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def start_download() -> None:

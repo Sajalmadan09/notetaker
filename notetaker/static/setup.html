@@ -35,6 +35,12 @@
     <div class="progress"><i id="dlbar"></i></div>
     <div class="status" id="dlstatus"></div>
     <div class="exports"><button class="btn" id="download">Download models</button></div>
+    <p style="font-size:var(--fs-2);color:var(--mut);margin-top:16px">
+      <b>Optional — code-mix model (flex, ~4.6 GB):</b> keeps English words in English
+      ("Linux operating system" instead of "लिनक्स ऑपरेटिंग सिस्टम"). Gated on Hugging Face:
+      accept its license there and sign in with <code>hf auth login</code> first.</p>
+    <div class="exports"><button class="btn" id="dlflex">Download code-mix model</button>
+      <span class="badge" id="b-flex">not installed</span></div>
   </div>
 
   <div class="card">
@@ -61,6 +67,7 @@ $("download").onclick = async () => {
   await fetch("/api/setup/download", { method: "POST" });
   $("download").disabled = true;
 };
+$("dlflex").onclick = async () => { await fetch("/api/setup/download-flex", { method: "POST" }); $("dlflex").disabled = true; };
 $("mic").onclick = async () => {
   try {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -79,6 +86,7 @@ async function poll() {
   $("dlstatus").textContent = d.state === "running" ? d.detail :
     d.state === "error" ? d.detail : d.state === "done" ? "download complete" : "";
   $("dlstatus").className = d.state === "error" ? "status err" : "status";
+  if (s.flex_present) { $("b-flex").textContent = "installed"; $("b-flex").className = "badge ok"; $("dlflex").disabled = true; }
   if (s.weights_present) {
     $("b-weights").textContent = "ready"; $("b-weights").className = "badge ok";
     $("download").disabled = true;

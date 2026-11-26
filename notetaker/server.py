@@ -83,6 +83,20 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, 
         path.unlink(missing_ok=True)
 
 
+@app.on_event("startup")
+def warm_default_engine() -> None:
+    """Use flex (code-mix) by default when installed, and load it in the background so the
+    first dictation doesn't hit the ~60 s cold load."""
+    import importlib.util
+    if os.environ.get("NOTETAKER_ENGINE") or importlib.util.find_spec("torch") is None:
+        return
+    if not setup.flex_present():
+        return
+    os.environ["NOTETAKER_ENGINE"] = "flex"
+    os.environ.setdefault("NOTETAKER_MODE", "mixed")
+    threading.Thread(target=lambda: FLEX_ASR._load(), daemon=True).start()
+
+
 @app.get("/api/health")
 def health() -> dict:
     import importlib.util
@@ -252,6 +266,12 @@ def setup_accept() -> dict:
 @app.post("/api/setup/download")
 def setup_download() -> dict:
     setup.start_download()
+    return {"started": True}
+
+
+@app.post("/api/setup/download-flex")
+def setup_download_flex() -> dict:
+    setup.start_flex_download()
     return {"started": True}
 
 

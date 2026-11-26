@@ -49,10 +49,11 @@ def main() -> None:
         webview.create_window("Notetaker", url, width=1100, height=820, min_size=(720, 560))
         webview.start()  # blocks until the window closes; closing the window quits the app
     except Exception:
-        import traceback
-        from notetaker import paths
-        paths.DATA.mkdir(parents=True, exist_ok=True)
-        (paths.DATA / "window-error.log").write_text(traceback.format_exc())
+        if not os.environ.get("NOTETAKER_BROWSER"):  # browser mode is a request, not an error
+            import traceback
+            from notetaker import paths
+            paths.DATA.mkdir(parents=True, exist_ok=True)
+            (paths.DATA / "window-error.log").write_text(traceback.format_exc())
         webbrowser.open(url)  # fallback: no native window available
         try:
             while True:
