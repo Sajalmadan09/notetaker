@@ -34,7 +34,9 @@ func trace(_ fields: [String: Any]) {
 // MARK: - Accessibility helpers
 
 func axTrusted() -> Bool {
-    AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false] as CFDictionary)
+    // prompt: true guides the user to System Settings when untrusted (needed
+    // for the bundled helper copy, which has its own TCC identity).
+    AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
 }
 
 func focusedElement() -> AXUIElement? {

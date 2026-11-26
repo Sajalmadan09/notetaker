@@ -21,5 +21,9 @@ uv run pyinstaller --noconfirm --windowed --name Notetaker \
   --exclude-module pandas --exclude-module pyarrow \
   --exclude-module matplotlib \
   notetaker/__main__.py
+# macOS kills mic access from a bundle whose Info.plist lacks the usage string;
+# the helper's responsible process is this app, so the key must live here.
+/usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Notetaker uses the microphone to transcribe your speech locally on this Mac.'" dist/Notetaker.app/Contents/Info.plist 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Notetaker uses the microphone to transcribe your speech locally on this Mac.'" dist/Notetaker.app/Contents/Info.plist
 codesign --force --deep --sign - dist/Notetaker.app
 echo "built: dist/Notetaker.app (ad-hoc signed; Gatekeeper: right-click > Open first time)"
