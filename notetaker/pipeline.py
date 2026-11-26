@@ -12,7 +12,7 @@ from .diarize import Diarizer
 Progress = Callable[[str, float], None]
 
 
-def transcribe_meeting(audio: np.ndarray, lang: str = "hi", num_clusters: int = -1,
+def transcribe_meeting(audio: np.ndarray, lang: str = "hi", num_clusters: int = -1, mode: str = "native",
                        progress: Progress | None = None,
                        asr: Int4Asr | None = None,
                        diarizer: Diarizer | None = None) -> dict:
@@ -30,7 +30,7 @@ def transcribe_meeting(audio: np.ndarray, lang: str = "hi", num_clusters: int = 
     turns = []
     for i, (start, end, spk) in enumerate(segs):
         piece = audio[int(start * SR):int(end * SR)]
-        text = " ".join(asr.transcribe(c, lang).strip()
+        text = " ".join(asr.transcribe(c, lang, mode=mode).strip()
                         for c in split_long_turn(piece)).strip()
         turns.append({"start": round(start, 2), "end": round(end, 2),
                       "speaker": int(spk), "text": text})

@@ -6,6 +6,7 @@ Everything stays on this machine; weights are read from the local HF cache only.
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import threading
 import time
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import history, setup
 from .asr import Int4Asr, available_languages
-from .asr_torch import TorchAsr
+from .asr_torch import FLEX_REPO, TorchAsr
 from .audio import SR
 from .diarize import Diarizer
 from .pipeline import transcribe_meeting
@@ -37,6 +38,9 @@ async def no_cache(request, call_next):
     return resp
 ASR = Int4Asr()
 TORCH_ASR = TorchAsr()
+FLEX_ASR = TorchAsr(FLEX_REPO)
+ENGINES = {"int4": ASR, "torch": TORCH_ASR, "flex": FLEX_ASR}
+MODES = ("native", "mixed", "romanized")
 DIARIZER = Diarizer()
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
@@ -48,7 +52,7 @@ def _set(job_id: str, **fields) -> None:
         JOBS[job_id].update(fields)
 
 
-def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str) -> None:
+def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, mode: str) -> None:
     try:
         _set(job_id, status="running", stage="loading")
         audio, sr = sf.read(path, dtype="float32", always_2d=True)
@@ -58,8 +62,8 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str) 
             _set(job_id, stage=stage, progress=frac)
 
         doc = transcribe_meeting(audio, lang=lang, num_clusters=num_clusters,
-                                 progress=progress,
-                                 asr=TORCH_ASR if engine == "torch" else ASR,
+                                 progress=progress, mode=mode,
+                                 asr=ENGINES[engine],
                                  diarizer=DIARIZER)
         _set(job_id, status="done", stage="done", progress=1.0,
              result=doc["turns"], detected_lang=doc["lang"])
@@ -67,7 +71,7 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str) 
             "id": job_id,
             "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
             "lang": doc["lang"],
-            "engine": engine,
+            "engine": engine, "mode": mode,
             "duration_s": round(len(audio) / SR, 1),
             "turn_count": len(doc["turns"]),
             "preview": (doc["turns"][0]["text"][:80] if doc["turns"] else ""),
@@ -81,7 +85,9 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str) 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "asr_loaded": ASR.loaded, "diarizer_loaded": DIARIZER.loaded}
+    import importlib.util
+    return {"status": "ok", "asr_loaded": ASR.loaded, "diarizer_loaded": DIARIZER.loaded,
+            "torch": importlib.util.find_spec("torch") is not None}
 
 
 @app.get("/api/languages")
@@ -91,15 +97,18 @@ def languages() -> list[str]:
 
 @app.post("/api/jobs")
 async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
-                     speakers: str = Form("auto"), engine: str = Form("int4")) -> dict:
-    if engine not in ("int4", "torch"):
-        raise HTTPException(400, "engine must be 'int4' or 'torch'")
-    if engine == "torch":
+                     speakers: str = Form("auto"), engine: str = Form("int4"),
+                     mode: str = Form("native")) -> dict:
+    if engine not in ENGINES:
+        raise HTTPException(400, "engine must be int4, torch or flex")
+    if mode not in MODES:
+        raise HTTPException(400, "mode must be native, mixed or romanized")
+    if engine in ("torch", "flex"):
         try:
             import torch  # noqa: F401
         except Exception:
-            raise HTTPException(400, "torch engine unavailable here (packaged app is int4-only; "
-                                     "use a dev checkout with the bench extra for torch)")
+            raise HTTPException(400, "torch/flex engines unavailable here (packaged app is int4-only; "
+                                     "use a dev checkout with the bench extra)")
     try:
         num_clusters = -1 if speakers == "auto" else int(speakers)
     except ValueError:
@@ -118,14 +127,15 @@ async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
     job_id = uuid.uuid4().hex[:12]
     with LOCK:
         JOBS[job_id] = {"status": "queued", "stage": "queued", "progress": 0.0,
-                        "lang": lang, "speakers": speakers, "engine": engine,
+                        "lang": lang, "speakers": speakers, "engine": engine, "mode": mode,
                         "result": None, "error": None, "detected_lang": None}
-    EXECUTOR.submit(_worker, job_id, tmp, lang, num_clusters, engine)
+    EXECUTOR.submit(_worker, job_id, tmp, lang, num_clusters, engine, mode)
     return {"job_id": job_id}
 
 
 @app.post("/api/quick")
-def quick(file: UploadFile = File(...), lang: str = Form("hi")) -> dict:
+def quick(file: UploadFile = File(...), lang: str = Form("hi"),
+          engine: str = Form(""), mode: str = Form("")) -> dict:
     """Provisional live transcription of a <=20 s chunk; diarization happens later."""
     data = file.file.read()
     try:
@@ -137,9 +147,13 @@ def quick(file: UploadFile = File(...), lang: str = Form("hi")) -> dict:
     audio = audio.mean(axis=1)
     if len(audio) > 20 * SR:
         raise HTTPException(400, "quick chunks must be <= 20 s")
+    engine = engine or os.environ.get("NOTETAKER_ENGINE", "int4")
+    mode = mode or os.environ.get("NOTETAKER_MODE", "native")
+    if engine not in ENGINES or mode not in MODES:
+        raise HTTPException(400, "bad engine or mode")
     if lang == "auto":
         lang = ASR.identify(audio)[0][0]
-    text = ASR.transcribe(audio, lang) if len(audio) >= SR // 2 else ""
+    text = ENGINES[engine].transcribe(audio, lang, mode=mode) if len(audio) >= SR // 2 else ""
     return {"text": text, "lang": lang}
 
 

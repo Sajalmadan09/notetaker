@@ -72,7 +72,8 @@ class Int4Asr:
         order = np.argsort(probs[ids])[::-1][:topk]
         return [(lang_ids[ids[j]], float(probs[ids[j]])) for j in order]
 
-    def transcribe(self, wav: np.ndarray, lang: str = "hi") -> str:
+    def transcribe(self, wav: np.ndarray, lang: str = "hi", mode: str = "native") -> str:
+        # int4 export: mixed/romanized prompts are inert (verified), always native script
         pipe = self._load()
         if lang not in pipe.prompts:
             raise ValueError(f"unsupported language {lang!r}; choose from {sorted(pipe.prompts)}")

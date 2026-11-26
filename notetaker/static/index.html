@@ -43,8 +43,13 @@
           <option value="auto">auto</option><option>2</option><option>3</option>
           <option>4</option><option>5</option><option>6</option>
         </select></label>
-        <label class="field">Engine<select id="engine" title="torch needs a dev checkout with the bench extra">
-          <option value="int4">int4 (fast)</option><option value="torch">torch (max accuracy)</option>
+        <label class="field">Script<select id="mode" title="Mixed keeps English words in English (code-mix). Needs the flex engine.">
+          <option value="mixed">Mixed — Hindi + English words</option><option value="native">Native script only</option><option value="romanized">Romanized (Latin)</option>
+        </select></label>
+        <label class="field">Engine<select id="engine">
+          <option value="int4">int4 — fast, native script only</option>
+          <option value="flex">flex — code-mix, best quality</option>
+          <option value="torch">core — max accuracy, native script</option>
         </select></label>
       </div>
     </details>
@@ -71,6 +76,9 @@ fetch("/api/languages").then(r => r.json()).then(ls => {
   $("lang").innerHTML = `<option value="auto">auto (detect)</option>` +
     ls.map(l => `<option${l === "hi" ? " selected" : ""}>${l}</option>`).join("");
   $("dot").classList.remove("bad");
+}).then(() => fetch("/api/health")).then(r => r.json()).then(h => {
+  if (h.torch) { $("engine").value = "flex"; }  // dev checkout with torch: code-mix by default
+  else for (const o of $("engine").options) if (o.value !== "int4") { o.disabled = true; o.textContent += " (needs torch install)"; }
 }).catch(() => { $("dot").classList.add("bad"); setStatus("server unreachable", true); });
 
 function setStatus(msg, isErr) {
@@ -121,6 +129,7 @@ async function submit(blob) {
   fd.append("lang", $("lang").value);
   fd.append("speakers", $("spk").value);
   fd.append("engine", $("engine").value);
+  fd.append("mode", $("engine").value === "int4" ? "native" : $("mode").value);
   setProgress(0, "Uploading", true);
   let r;
   try {
