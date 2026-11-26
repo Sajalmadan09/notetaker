@@ -98,13 +98,14 @@ function setProgress(f, stage, busy) {
 }
 const STAGES = { queued: "Waiting in queue", loading: "Loading audio", diarizing: "Separating speakers", transcribing: "Transcribing", done: "Done" };
 
-async function toWav16k(blob) {
+async function toWav16k(blob, lastSeconds) {
   const ac = new (window.AudioContext || window.webkitAudioContext)();
   const buf = await ac.decodeAudioData(await blob.arrayBuffer());
   const off = new OfflineAudioContext(1, Math.ceil(buf.duration * 16000), 16000);
   const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
-  const data = (await off.startRendering()).getChannelData(0);
+  let data = (await off.startRendering()).getChannelData(0);
   ac.close();
+  if (lastSeconds) data = data.subarray(Math.max(0, data.length - lastSeconds * 16000));
   const n = data.length, ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
   const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   ws(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); ws(8, "WAVEfmt ");
@@ -193,9 +194,12 @@ $("dl").onclick = () => {
 
 $("file").onchange = e => { if (e.target.files[0]) submit(e.target.files[0]); e.target.value = ""; };
 
-async function liveChunk(blob) {
+// MediaRecorder timeslices after the first have no container header and can't be decoded alone,
+// so decode everything so far and keep the newest 10 s.
+// ponytail: re-decodes the whole recording every 10 s; switch to AudioWorklet PCM (as the extension does) if long meetings lag.
+async function liveChunk(all) {
   try {
-    const wav = await toWav16k(blob);
+    const wav = await toWav16k(all, 10);
     const fd = new FormData();
     fd.append("file", wav, "chunk.wav");
     fd.append("lang", $("lang").value);
@@ -244,7 +248,7 @@ function startRecorder(stream, extras = [], ctx = null) {
   recorder.onerror = () => setStatus("recording error: " + (recorder.error || "unknown"), true);
   recorder.ondataavailable = e => {
     chunks.push(e.data);
-    if (recorder.state === "recording" && e.data.size) liveChunk(e.data);
+    if (recorder.state === "recording" && e.data.size) liveChunk(new Blob(chunks, { type: recorder.mimeType }));
   };
   recorder.onstop = () => {
     stream.getTracks().forEach(tr => tr.stop());

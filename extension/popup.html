@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header><span class="logo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg></span>
+  <b>Notetaker</b><span id="pill" class="pill">idle</span></header>
+<div id="banner" class="banner" hidden></div>
+
+<section id="rec" hidden>
+  <div id="timer" class="timer">0:00</div>
+  <div id="rtitle" class="muted"></div>
+  <div id="live" class="live"></div>
+  <button id="stop" class="btn danger">Stop &amp; transcribe</button>
+</section>
+<section id="proc" hidden>
+  <div class="muted" id="stage">Working…</div><div class="bar"><i id="pbar"></i></div>
+  <div class="muted small">Speaker separation + transcription run locally. You'll get a notification.</div>
+</section>
+<section id="idle">
+  <button id="start" class="btn primary">● Record this tab</button>
+  <div id="atitle" class="muted small center"></div>
+  <div class="row">
+    <button id="instant" class="btn">⚡ Instant meeting</button>
+    <button id="dash" class="btn">Recordings</button>
+  </div>
+  <div class="row"><input id="link" placeholder="Paste a Meet link to join…"><button id="join" class="btn">Join</button></div>
+</section>
+
+<section>
+  <div class="label">Upcoming <button id="refresh" class="link">refresh</button></div>
+  <div id="up" class="muted small">Add your calendar link in Settings to see meetings here.</div>
+</section>
+
+<details id="set"><summary>Settings</summary>
+  <label>Notetaker app address<input id="server"></label>
+  <div class="row2">
+    <label>Language<select id="lang"><option value="hi">Hindi</option><option value="en">English</option><option value="auto">Auto-detect</option>
+      <option value="bn">Bengali</option><option value="ta">Tamil</option><option value="te">Telugu</option><option value="mr">Marathi</option>
+      <option value="gu">Gujarati</option><option value="kn">Kannada</option><option value="ml">Malayalam</option><option value="pa">Punjabi</option><option value="ur">Urdu</option></select></label>
+    <label>Script<select id="mode"><option value="">App default</option><option value="mixed">Mixed (Hindi + English words)</option><option value="native">Native only</option></select></label>
+  </div>
+  <label class="chk"><input type="checkbox" id="mic"> Include my microphone <button id="grant" class="link">allow mic</button></label>
+  <label class="chk"><input type="checkbox" id="auto"> Auto-record scheduled Meets <span class="muted small">(needs the Meet tab open; see README)</span></label>
+  <label>Calendar secret iCal address
+    <input id="ics" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"></label>
+  <div class="muted small">Google Calendar → Settings → your calendar → <i>Integrate calendar</i> → <i>Secret address in iCal format</i>. Stays in this browser; never sent anywhere except Google.</div>
+  <button id="save" class="btn">Save</button> <span id="saved" class="muted small"></span>
+</details>
+<script src="popup.js"></script>
+</body></html>

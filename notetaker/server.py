@@ -111,8 +111,10 @@ def languages() -> list[str]:
 
 @app.post("/api/jobs")
 async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
-                     speakers: str = Form("auto"), engine: str = Form("int4"),
-                     mode: str = Form("native")) -> dict:
+                     speakers: str = Form("auto"), engine: str = Form(""),
+                     mode: str = Form("")) -> dict:
+    engine = engine or os.environ.get("NOTETAKER_ENGINE", "int4")  # extension/helper send none
+    mode = mode or os.environ.get("NOTETAKER_MODE", "native")
     if engine not in ENGINES:
         raise HTTPException(400, "engine must be int4, torch or flex")
     if mode not in MODES:
