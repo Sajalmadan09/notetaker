@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Notetaker for Google Meet",
+  "version": "0.1.0",
+  "description": "Capture Google Meet tab audio into your local Notetaker server; calendar-aware auto-start. Offline transcription, nothing leaves your machine.",
+  "permissions": ["tabCapture", "offscreen", "storage", "notifications", "alarms", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1:8010/*",
+    "http://localhost:8010/*",
+    "https://calendar.google.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html" },
+  "minimum_chrome_version": "116"
+}
