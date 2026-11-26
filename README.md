@@ -162,6 +162,15 @@ component library is ever wanted: Pico.css / Open Props / DaisyUI (vendorable, M
 shadcn/ui (MIT, needs React build); inspiration: Dribbble/Behance/Refero free tier,
 and open-source dashboards (Cal.com, Documenso, Plane, Formbricks).
 
+## Desktop window
+
+The packaged app opens its UI in a native window (pywebview / WKWebView) instead of a
+browser tab; the server still runs inside the app on 127.0.0.1 but is invisible to users.
+Closing the window quits the app and the dictation helper. `NOTETAKER_BROWSER=1` forces
+the old browser-tab mode; if no native window can be created it falls back automatically
+(reason in `window-error.log` in the data dir). Tab capture (`getDisplayMedia`) does not
+exist in WKWebView — Meet capture belongs to the Chrome extension.
+
 ## Packaging — macOS `.app` + first-run wizard
 
 ```bash

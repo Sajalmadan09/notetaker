@@ -14,6 +14,7 @@ uv run pyinstaller --noconfirm --windowed --name Notetaker \
   --hidden-import safetensors.numpy \
   --hidden-import scipy.signal \
   --hidden-import onnxruntime \
+  --collect-all webview \
   --collect-binaries sherpa_onnx \
   --collect-binaries onnxruntime \
   --exclude-module torch --exclude-module torchaudio \

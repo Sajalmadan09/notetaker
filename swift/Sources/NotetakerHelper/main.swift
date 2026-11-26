@@ -604,5 +604,12 @@ if !args.contains("--check") && !args.contains("--selftest") {
     _ = micSema.wait(timeout: .now() + 60)
 }
 print("NotetakerHelper running: hold <3s = push-to-talk, hold ≥3s = latch, press again = stop (lang=\(lang), server=\(serverURL)).")
+// Quit when the parent Notetaker app goes away (Cmd+Q kills it without cleanup).
+let startParent = getppid()
+if startParent > 1 {
+    Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+        if getppid() != startParent { exit(0) }
+    }
+}
 // NSApplication's run loop integrates the Carbon event dispatcher.
 nsApp.run()
