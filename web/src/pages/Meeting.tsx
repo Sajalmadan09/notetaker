@@ -176,6 +176,11 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
               </div>
             ))}
             {!turns.length && <div className="burst"><span className="ja">静か</span><p>No speech was detected in this recording.</p></div>}
+            {rec.raw_text && (
+              <details className="opts" style={{ marginTop: 6 }}>
+                <summary>Exactly as spoken (before AI cleanup{rec.cleanup_ms ? `, ${(rec.cleanup_ms / 1000).toFixed(1)} s` : ""}{rec.app ? `, typed into ${rec.app}` : ""})</summary>
+                <div className="bubble live" style={{ marginTop: 10 }}>{rec.raw_text}</div>
+              </details>)}
           </div>
         )}
       </div>

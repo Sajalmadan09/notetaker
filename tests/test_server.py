@@ -272,3 +272,28 @@ def test_job_keeps_calendar_title_and_attendees():
     assert rec["title"] == "Weekly sync" and rec["attendees"] == ["asha@x.com", "ravi@x.com"]
     _, preview = get(f"/api/history/{job_id}/share/gmail")
     assert preview["to"] == ["asha@x.com", "ravi@x.com"]
+
+
+def test_dictation_cleanup_endpoint_passthrough_and_history_keeps_raw(monkeypatch):
+    from notetaker import llm
+    monkeypatch.setattr(llm, "settings", lambda: {"dictation": {"cleanup": False, "match_app": True, "dictionary": []}})
+    req = urllib.request.Request(BASE + "/api/dictation/cleanup", data=json.dumps({"text": " um hi ", "app": "Slack"}).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        out = json.loads(r.read())
+    assert out["text"] == "um hi" and not out["cleaned"]
+
+    boundary = "----notetakerboundary"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"d.wav\"\r\nContent-Type: audio/wav\r\n\r\n").encode() + wav_bytes() + b"\r\n"
+    for key, val in [("text", "Ship it on Monday."), ("raw", "um ship it on friday no monday"),
+                     ("app_name", "Slack"), ("cleanup_ms", "2100")]:
+        body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{val}\r\n").encode()
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(BASE + "/api/history", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        rid = json.loads(r.read())["id"]
+    _, rec = get(f"/api/history/{rid}")
+    assert rec["turns"][0]["text"] == "Ship it on Monday." and rec["raw_text"].startswith("um ship")
+    assert rec["app"] == "Slack" and rec["cleanup_ms"] == 2100

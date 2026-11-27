@@ -10,7 +10,7 @@ export type Row = {
 };
 export type Recording = Row & {
   mode?: string; turns: Turn[]; names?: Record<string, string>; summary?: Summary;
-  insert_path?: string; asr_ms?: number;
+  insert_path?: string; asr_ms?: number; raw_text?: string; cleanup_ms?: number; app?: string;
 };
 export type Provider = {
   label: string; kind: "anthropic" | "openai"; local: boolean; needs_key: boolean;
@@ -22,7 +22,8 @@ export type Connector = {
   configured: boolean; needs_node: boolean;
 };
 export type CalEvent = { id: string; title: string; start: string; end: string; attendees: string[]; meet: string };
-export type LLMSettings = { provider: string; summary_language: string; providers: Record<string, Provider> };
+export type Dictation = { cleanup: boolean; match_app: boolean; dictionary: string[] };
+export type LLMSettings = { provider: string; summary_language: string; dictation: Dictation; providers: Record<string, Provider> };
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const { json, ...rest } = init ?? {};
@@ -49,6 +50,8 @@ export const api = {
   llm: () => call<LLMSettings>("/api/llm/settings"),
   saveLlm: (body: unknown) => call<LLMSettings>("/api/llm/settings", { method: "PUT", json: body }),
   models: (provider: string) => call<string[]>(`/api/llm/models?provider=${provider}`),
+  tryCleanup: (text: string, app: string) =>
+    call<{ text: string; raw: string; cleaned: boolean; ms: number; error: string }>("/api/dictation/cleanup", { method: "POST", json: { text, app } }),
   health: () => call<{ torch: boolean }>("/api/health"),
   connectors: () => call<{ connectors: Connector[]; slack_manifest: unknown }>("/api/connectors"),
   saveConnector: (id: string, body: { values?: Record<string, string>; secrets?: Record<string, string> }) =>

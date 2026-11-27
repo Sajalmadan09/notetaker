@@ -214,7 +214,8 @@ def get_job(job_id: str) -> dict:
 async def history_add(file: UploadFile = File(...), lang: str = Form("hi"),
                       text: str = Form(...), verdict: str = Form(""),
                       insert_path: str = Form(""), asr_ms: int = Form(0),
-                      source: str = Form("dictation")) -> dict:
+                      source: str = Form("dictation"), raw: str = Form(""), app_name: str = Form(""),
+                      cleanup_ms: int = Form(0)) -> dict:
     """Ingest a dictation (or other single-utterance recording) from the helper."""
     data = await file.read()
     try:
@@ -239,6 +240,8 @@ async def history_add(file: UploadFile = File(...), lang: str = Form("hi"),
         "verdict": verdict,
         "insert_path": insert_path,
         "asr_ms": asr_ms,
+        **({"raw_text": raw, "cleanup_ms": cleanup_ms} if raw and raw != text else {}),
+        **({"app": app_name} if app_name else {}),
         "turns": [{"start": 0.0, "end": duration, "speaker": 0, "text": text}],
     }, tmp)
     return {"id": rid}
@@ -420,6 +423,13 @@ def slack_share(rid: str, payload: dict = Body(...)) -> dict:
         return {"result": connectors.slack_post(str(payload.get("channel_id", "")), str(payload.get("text", "")))}
     except connectors.ConnectorError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/dictation/cleanup")
+def dictation_cleanup(payload: dict = Body(...)) -> dict:
+    """Called by the dictation helper between ASR and typing. Never fails: returns the raw
+    text when cleanup is off, unavailable, slow, or misbehaves."""
+    return llm.cleanup_dictation(str(payload.get("text", ""))[:5000], str(payload.get("app", ""))[:80])
 
 
 @app.get("/api/llm/settings")

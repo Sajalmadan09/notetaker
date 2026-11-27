@@ -260,14 +260,39 @@ func splitSamples(_ samples: [Float], maxSeconds: Double = 19.0) -> [[Float]] {
     return pieces.filter { $0.count >= 4800 }
 }
 
-func postHistory(wav: Data, text: String, verdict: String, insertPath: String, asrMs: Int) {
+// LLM cleanup (server decides if it's on). Any failure -> the exact recognized words.
+func cleanup(_ text: String, app: String) -> (text: String, ms: Int) {
+    var request = URLRequest(url: URL(string: serverURL + "/api/dictation/cleanup")!)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "app": app])
+    request.timeoutInterval = 20
+    let sema = DispatchSemaphore(value: 0)
+    var result = (text: text, ms: 0)
+    URLSession.shared.dataTask(with: request) { data, _, err in
+        if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let cleaned = obj["text"] as? String, !cleaned.isEmpty {
+            result = (cleaned, obj["ms"] as? Int ?? 0)
+            if let e = obj["error"] as? String, !e.isEmpty { trace(["event": "cleanup_fallback", "error": e]) }
+        } else {
+            trace(["event": "cleanup_http_error", "error": err?.localizedDescription ?? ""])
+        }
+        sema.signal()
+    }.resume()
+    _ = sema.wait(timeout: .now() + 22)
+    return result
+}
+
+func postHistory(wav: Data, text: String, verdict: String, insertPath: String, asrMs: Int,
+                 raw: String = "", app: String = "", cleanupMs: Int = 0) {
     let boundary = "----notetakerhist"
     var body = Data()
     body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"d.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
     body.append(wav)
     for (key, value) in [("lang", lang), ("text", text), ("verdict", verdict),
                          ("insert_path", insertPath), ("asr_ms", String(asrMs)),
-                         ("source", "dictation")] {
+                         ("source", "dictation"), ("raw", raw), ("app_name", app),
+                         ("cleanup_ms", String(cleanupMs))] {
         body.append(Data("\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"\(key)\"\r\n\r\n\(value)".utf8))
     }
     body.append(Data("\r\n--\(boundary)--\r\n".utf8))
@@ -281,6 +306,8 @@ func postHistory(wav: Data, text: String, verdict: String, insertPath: String, a
 }
 
 func dictateOnce(recorder: Recorder) {
+    // The pill never takes focus, so the frontmost app is still where the text will go.
+    let targetApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
     let samples = recorder.stop()
     guard samples.count >= 8000 else {
         trace(["event": "too_short", "samples": samples.count])
@@ -305,9 +332,12 @@ func dictateOnce(recorder: Recorder) {
         return
     }
     let asrMs = Int(Date().timeIntervalSince(t0) * 1000)
-    let (path, verdict) = insertAndVerify(text)
-    trace(["event": "dictation", "asr_ms": asrMs, "insert_path": path, "verdict": verdict, "text": text])
-    postHistory(wav: wav, text: text, verdict: verdict, insertPath: path, asrMs: asrMs)
+    let (final, cleanupMs) = cleanup(text, app: targetApp)
+    let (path, verdict) = insertAndVerify(final)
+    trace(["event": "dictation", "asr_ms": asrMs, "cleanup_ms": cleanupMs, "app": targetApp,
+           "insert_path": path, "verdict": verdict, "text": final, "raw": text])
+    postHistory(wav: wav, text: final, verdict: verdict, insertPath: path, asrMs: asrMs,
+                raw: text, app: targetApp, cleanupMs: cleanupMs)
 }
 
 // MARK: - Modes

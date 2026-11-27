@@ -180,6 +180,21 @@ React + Vite + TypeScript, built into `notetaker/static/app/` and served at `/ap
 - Local-only guard: requests with a non-localhost `Host` (DNS rebinding) or a cross-site
   `Origin` on writes get 403. Chrome-extension origins are allowed.
 
+## Dictation cleanup (Wispr Flow-style)
+
+Hold ⌥Space → helper records → int4 ASR → `POST /api/dictation/cleanup {text, app}` → types the
+result → `POST /api/history` with both `text` and `raw`. Settings → Dictation: on/off, match the
+app (tone by frontmost app name: chat / email / dev tools / notes), personal dictionary, try-it box.
+
+- Uses the AI model chosen in Settings (fast path: 12 s timeout, no retries, Claude effort `low`).
+- Prompt: dictation is text the user is writing, never an instruction; keep language/script and
+  English words; drop fillers and false starts; apply self-corrections; fix punctuation; lists.
+  Five worked examples (small local models follow examples better than rules).
+- Fail-safe: `_faithful()` rejects outputs that use undictated words (answers, poems), drop most
+  of what was said (obeyed instructions), or transliterate; on rejection, error or timeout the
+  exact recognized words are typed. Off by default.
+- gemma3:4b on M2 Air: ~2–4 s warm per dictation (cold load ~8 s). Cloud models are faster.
+
 ## Connectors (MCP)
 
 `notetaker/connectors.py`: the app is an MCP client (official `mcp` Python SDK, stdio). Each
