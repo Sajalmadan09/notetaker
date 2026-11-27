@@ -197,6 +197,18 @@ Keychain injected as env vars. Settings → Connectors guides setup; the meeting
   the exact text shown.
 - API: `GET /api/connectors`, `PUT /api/connectors/{id}`, `POST /api/connectors/{id}/test`,
   `GET /api/connectors/slack/channels`, `GET|POST /api/history/{id}/share/slack`.
+- Gmail: Google's official remote MCP server `https://gmailmcp.googleapis.com/mcp/v1`
+  (streamable HTTP, Bearer token). Each user creates their own OAuth client in Google Cloud
+  (Desktop app, "Use this client for an AI-powered agent" ticked; Gmail API + Gmail MCP API
+  enabled; consent screen External + self as test user). Sign-in = installed-app OAuth with PKCE
+  in the system browser (Google blocks embedded webviews), loopback callback
+  `/api/connectors/gmail/callback`; refresh token in Keychain, access token in memory only.
+  Scope requested: `gmail.compose` only. The app calls only `create_draft` and never sends;
+  the server offers 28 tools incl. send/trash, which the app never calls.
+  Testing-mode Google apps get 7-day refresh tokens (user sees a reconnect prompt).
+  `create_draft` is labelled Developer Preview on Google's docs.
+- More API: `POST /api/connectors/{id}/disconnect`, `POST /api/connectors/gmail/connect`,
+  `GET|POST /api/history/{id}/share/gmail`.
 
 ## UI system
 

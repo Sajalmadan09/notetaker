@@ -16,8 +16,8 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import connectors, history, llm, setup
@@ -310,6 +310,70 @@ def connectors_test(cid: str) -> dict:
         raise HTTPException(404, "unknown connector")
     try:
         return {"tools": connectors.tools(cid)}
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/connectors/{cid}/disconnect")
+def connectors_disconnect(cid: str) -> dict:
+    try:
+        return connectors.disconnect(cid)
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/connectors/gmail/connect")
+def gmail_connect(request: Request) -> dict:
+    """Start Google sign-in in the system browser (Google blocks sign-in inside embedded webviews)."""
+    import webbrowser
+    redirect = f"http://127.0.0.1:{request.url.port or 80}/api/connectors/gmail/callback"
+    try:
+        url = connectors.google_auth_url(redirect)
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+    webbrowser.open(url)
+    return {"url": url, "redirect_uri": redirect}
+
+
+@app.get("/api/connectors/gmail/callback")
+def gmail_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
+    import html
+    try:
+        if error:
+            raise connectors.ConnectorError(f"Google sign-in was cancelled ({error}).")
+        connectors.google_callback(state, code)
+        title, msg, ok = "Gmail connected", "You can close this tab and go back to Kiroku.", True
+    except connectors.ConnectorError as e:
+        title, msg, ok = "Gmail not connected", str(e), False
+    color = "#4f7a34" if ok else "#d23a2a"
+    return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><title>{title}</title>
+<body style="font:16px -apple-system,sans-serif;background:#f3ede2;color:#1a1714;display:grid;place-items:center;height:100vh;margin:0">
+<div style="border:2px solid #1a1714;box-shadow:5px 5px 0 #1a1714;background:#fbf7ef;padding:28px 32px;max-width:440px">
+<div style="width:34px;height:34px;background:#d23a2a;color:#fff8ec;display:grid;place-items:center;font:600 20px serif;border-radius:5px;transform:rotate(-4deg)">記</div>
+<h1 style="font:600 24px Georgia,serif;margin:16px 0 8px;color:{color}">{html.escape(title)}</h1>
+<p style="margin:0">{html.escape(msg)}</p></div></body>""", status_code=200 if ok else 400)
+
+
+@app.get("/api/history/{rid}/share/gmail")
+def gmail_preview(rid: str) -> dict:
+    record = history.get(rid)
+    if record is None:
+        raise HTTPException(404, "unknown recording")
+    return {"subject": f"Notes: {record.get('title') or 'meeting'} ({record.get('ts', '')[:10]})",
+            "body": connectors.notes_markdown(record, plain=True)}
+
+
+@app.post("/api/history/{rid}/share/gmail")
+def gmail_share(rid: str, payload: dict = Body(...)) -> dict:
+    """Creates a Gmail draft from exactly what the user reviewed; never sends."""
+    if history.get(rid) is None:
+        raise HTTPException(404, "unknown recording")
+    to = payload.get("to") or []
+    if not isinstance(to, list):
+        raise HTTPException(400, "to must be a list of email addresses")
+    try:
+        return {"draft_id": connectors.gmail_draft([str(a) for a in to], str(payload.get("subject", "")),
+                                                   str(payload.get("body", "")))}
     except connectors.ConnectorError as e:
         raise HTTPException(400, str(e))
 

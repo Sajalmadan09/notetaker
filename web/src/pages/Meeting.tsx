@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, audioUrl, exportUrl, type LLMSettings, type Recording, type Summary } from "../api";
+import ShareGmail from "./ShareGmail";
 import ShareSlack from "./ShareSlack";
 import { clock, fmtDur, highlight, Icon, parseTs, speakerColor, speakerName, useToast } from "../ui";
 
@@ -14,7 +15,7 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
   const [busy, setBusy] = useState(false);
   const [sumErr, setSumErr] = useState("");
   const [armed, setArmed] = useState(false);
-  const [sharing, setSharing] = useState(false);
+  const [sharing, setSharing] = useState<"" | "slack" | "gmail">("");
   const aud = useRef<HTMLAudioElement>(null);
   const [now, setNow] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -66,7 +67,13 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
         <div className="topbar">
           <a className="btn ghost" href="#/"><Icon name="back" />Library</a>
           <span className="sp" />
-          <button className="btn" onClick={() => setSharing(true)}><Icon name="share" />Share to Slack</button>
+          <details className="menu">
+            <summary className="btn"><Icon name="share" />Share</summary>
+            <div className="pop panel">
+              <button onClick={e => { (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; setSharing("slack"); }}>Post to Slack</button>
+              <button onClick={e => { (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; setSharing("gmail"); }}>Email as Gmail draft</button>
+            </div>
+          </details>
           <details className="menu">
             <summary className="btn"><Icon name="down" />Export</summary>
             <div className="pop panel">
@@ -172,7 +179,8 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
           </div>
         )}
       </div>
-      {sharing && <ShareSlack rid={rec.id} onClose={() => setSharing(false)} />}
+      {sharing === "slack" && <ShareSlack rid={rec.id} onClose={() => setSharing("")} />}
+      {sharing === "gmail" && <ShareGmail rid={rec.id} onClose={() => setSharing("")} />}
       <Ask rec={rec} llmReady={!!prov} local={!!prov?.local} label={prov?.label ?? ""} />
     </div>
   );

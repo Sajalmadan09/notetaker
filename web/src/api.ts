@@ -53,6 +53,11 @@ export const api = {
   saveConnector: (id: string, body: { values?: Record<string, string>; secrets?: Record<string, string> }) =>
     call<Connector>(`/api/connectors/${id}`, { method: "PUT", json: body }),
   testConnector: (id: string) => call<{ tools: string[] }>(`/api/connectors/${id}/test`, { method: "POST" }),
+  disconnectConnector: (id: string) => call<Connector>(`/api/connectors/${id}/disconnect`, { method: "POST" }),
+  gmailConnect: () => call<{ url: string; redirect_uri: string }>("/api/connectors/gmail/connect", { method: "POST" }),
+  gmailPreview: (rid: string) => call<{ subject: string; body: string }>(`/api/history/${rid}/share/gmail`),
+  gmailDraft: (rid: string, to: string[], subject: string, body: string) =>
+    call<{ draft_id: string }>(`/api/history/${rid}/share/gmail`, { method: "POST", json: { to, subject, body } }),
   slackChannels: () => call<{ id: string; name: string }[]>("/api/connectors/slack/channels"),
   slackPreview: (rid: string) => call<{ text: string }>(`/api/history/${rid}/share/slack`),
   slackPost: (rid: string, channel_id: string, text: string) =>

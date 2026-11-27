@@ -51,7 +51,7 @@ def test_post_validates_and_notes_include_summary(monkeypatch):
     md = connectors.notes_markdown({"title": "Standup", "ts": "2026-11-27 10:00:00", "duration_s": 600,
                                     "summary": {"overview": "We shipped.", "decisions": ["Ship Monday"],
                                                 "action_items": [{"text": "Send deck", "owner": "Asha", "done": True}]}})
-    assert md.startswith("**Standup**") and "~~Send deck~~ (Asha)" in md and "- Ship Monday" in md
+    assert md.startswith("**Standup**") and "~~Send deck (Asha)~~" in md and "- Ship Monday" in md
 
 
 def test_server_error_is_extracted_from_stderr():
@@ -59,3 +59,85 @@ def test_server_error_is_extracted_from_stderr():
            '{"level":"fatal","message":"Authentication failed - check your Slack tokens","error":"invalid_auth"}\n')
     assert connectors._server_error(log) == "Authentication failed - check your Slack tokens (invalid_auth)"
     assert connectors._server_error("plain text") is None
+
+
+# ---- Gmail -----------------------------------------------------------------------------
+import asyncio
+import base64
+import hashlib
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
+
+
+def _gmail_creds(isolated):
+    isolated[("gmail", "client_id")] = "cid.apps.googleusercontent.com"
+    isolated[("gmail", "client_secret")] = "shh"
+
+
+def test_gmail_needs_client_and_sign_in(isolated):
+    with pytest.raises(connectors.ConnectorError, match="client ID"):
+        connectors.google_auth_url("http://127.0.0.1:8010/cb")
+    _gmail_creds(isolated)
+    gmail = next(c for c in connectors.listing() if c["id"] == "gmail")
+    assert not gmail["configured"]  # credentials alone aren't a connection
+
+
+def test_google_auth_url_uses_pkce_and_compose_scope(isolated):
+    _gmail_creds(isolated)
+    q = {k: v[0] for k, v in parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query).items()}
+    assert q["scope"] == "https://www.googleapis.com/auth/gmail.compose"
+    assert q["code_challenge_method"] == "S256" and q["access_type"] == "offline"
+    verifier = connectors._PENDING[q["state"]][0]
+    assert q["code_challenge"] == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def test_google_callback_checks_state_and_stores_refresh_token(isolated, monkeypatch):
+    _gmail_creds(isolated)
+    q = parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query)
+    with pytest.raises(connectors.ConnectorError, match="expired"):
+        connectors.google_callback("forged-state", "code")
+    q = parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query)
+    sent = {}
+    monkeypatch.setattr(connectors, "_token_request", lambda form: sent.update(form) or
+                        {"access_token": "at", "refresh_token": "rt", "expires_in": 3600})
+    connectors.google_callback(q["state"][0], "the-code")
+    assert sent["code_verifier"] and sent["redirect_uri"] == "http://127.0.0.1:8010/cb"
+    assert isolated[("gmail", "refresh_token")] == "rt"
+    assert next(c for c in connectors.listing() if c["id"] == "gmail")["configured"]
+    with pytest.raises(connectors.ConnectorError):  # state is single-use
+        connectors.google_callback(q["state"][0], "the-code")
+
+
+def test_revoked_refresh_token_is_forgotten(isolated, monkeypatch):
+    _gmail_creds(isolated)
+    isolated[("gmail", "refresh_token")] = "rt"
+    connectors._ACCESS.clear()
+
+    def boom(form):
+        raise connectors.ConnectorError("Google sign-in failed: invalid_grant")
+    monkeypatch.setattr(connectors, "_token_request", boom)
+    with pytest.raises(connectors.ConnectorError, match="Connect Gmail again"):
+        connectors._google_access_token()
+    assert ("gmail", "refresh_token") not in isolated
+
+
+def test_gmail_draft_only_calls_create_draft(monkeypatch):
+    calls = []
+
+    class FakeSession:
+        async def call_tool(self, name, args):
+            calls.append((name, args))
+            return SimpleNamespace(isError=False, content=[SimpleNamespace(type="text", text='{"id": "r-123"}')])
+    monkeypatch.setattr(connectors, "_run", lambda cid, fn: asyncio.run(fn(FakeSession())))
+    with pytest.raises(connectors.ConnectorError, match="plain email"):
+        connectors.gmail_draft(["Asha <asha@x.com>"], "s", "b")
+    assert connectors.gmail_draft(["asha@x.com", " "], "Notes", "body") == "r-123"
+    assert calls == [("create_draft", {"to": ["asha@x.com"], "subject": "Notes", "body": "body"})]
+
+
+def test_plain_notes_have_no_markdown():
+    txt = connectors.notes_markdown({"title": "Sync", "ts": "2026-11-27 10:00", "duration_s": 60,
+                                     "summary": {"overview": "o", "decisions": [],
+                                                 "action_items": [{"text": "Do it", "owner": "Asha", "done": True}]}},
+                                    plain=True)
+    assert "**" not in txt and "_" not in txt and "- [x] Do it (Asha)" in txt
