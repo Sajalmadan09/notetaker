@@ -14,7 +14,7 @@ export default function ShareGmail({ rid, onClose }: { rid: string; onClose: () 
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    api.gmailPreview(rid).then(p => { setSubject(p.subject); setBody(p.body); }).catch(e => setErr(e.message));
+    api.gmailPreview(rid).then(p => { setSubject(p.subject); setBody(p.body); if (p.to.length) setTo(p.to.join(", ")); }).catch(e => setErr(e.message));
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     addEventListener("keydown", esc); return () => removeEventListener("keydown", esc);
   }, [rid]);

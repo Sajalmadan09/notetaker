@@ -49,18 +49,36 @@ PRESETS: dict[str, dict] = {
         "server": "Google's official Gmail MCP server (gmailmcp.googleapis.com)",
         "transport": "http",
         "url": "https://gmailmcp.googleapis.com/mcp/v1",
+        "oauth": "google",
+        # create_draft accepts gmail.compose; the narrowest scope that can write a draft.
+        "scope": "https://www.googleapis.com/auth/gmail.compose",
+        "api": "Gmail MCP API",
         # The user's own OAuth client from their Google Cloud project (personal use, no app review).
         "secrets": {"client_id": "OAuth client ID", "client_secret": "OAuth client secret"},
         "fields": {},
         "env": {},
     },
+    "calendar": {
+        "label": "Google Calendar",
+        "about": "See today's meetings on the Record page; recordings take the event's title and attendees.",
+        "server": "Google's official Calendar MCP server (calendarmcp.googleapis.com)",
+        "transport": "http",
+        "url": "https://calendarmcp.googleapis.com/mcp/v1",
+        "oauth": "google",
+        # Read-only: list_events accepts calendar.events.readonly, so Kiroku can't change your calendar.
+        "scope": "https://www.googleapis.com/auth/calendar.events.readonly",
+        "api": "Calendar MCP API",
+        "secrets": {"client_id": "OAuth client ID", "client_secret": "OAuth client secret"},
+        "fields": {},
+        "env": {},
+    },
 }
+# Google connectors share one OAuth client (one Google Cloud setup); each keeps its own sign-in.
+_SHARED_GOOGLE = ("client_id", "client_secret")
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-# create_draft accepts gmail.compose; the narrowest scope that can write a draft.
-GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
-_PENDING: dict[str, tuple[str, str, float]] = {}  # oauth state -> (pkce verifier, redirect_uri, started)
+_PENDING: dict[str, tuple[str, str, str, float]] = {}  # state -> (connector, pkce verifier, redirect_uri, started)
 _ACCESS: dict[str, tuple[str, float]] = {}  # connector -> (access token, expires at); memory only
 
 # Slack app manifest the user pastes at api.slack.com/apps -> Create New App -> From a manifest.
@@ -101,13 +119,23 @@ def _set_secret(cid: str, name: str, value: str) -> None:
             pass
 
 
+def _sget(cid: str, name: str) -> str | None:
+    owner = "google" if PRESETS[cid].get("oauth") == "google" and name in _SHARED_GOOGLE else cid
+    return _get_secret(owner, name)
+
+
+def _sset(cid: str, name: str, value: str) -> None:
+    owner = "google" if PRESETS[cid].get("oauth") == "google" and name in _SHARED_GOOGLE else cid
+    _set_secret(owner, name, value)
+
+
 def listing() -> list[dict]:
     cfg = _config()
     out = []
     for cid, p in PRESETS.items():
         mine = cfg.get(cid, {})
-        has = {k: _get_secret(cid, k) is not None for k in p["secrets"]}
-        signed_in = p["transport"] != "http" or _get_secret(cid, "refresh_token") is not None
+        has = {k: _sget(cid, k) is not None for k in p["secrets"]}
+        signed_in = p.get("oauth") != "google" or _sget(cid, "refresh_token") is not None
         out.append({"id": cid, "label": p["label"], "about": p["about"], "server": p["server"],
                     "secrets": p["secrets"], "fields": p["fields"],
                     "values": {k: mine.get(k, "") for k in p["fields"]},
@@ -127,19 +155,24 @@ def save(cid: str, values: dict | None = None, secrets: dict | None = None) -> d
             mine[k] = str(v).strip()
     for k, v in (secrets or {}).items():
         if k in p["secrets"]:  # write-only; never returned
-            _set_secret(cid, k, str(v).strip())
+            _sset(cid, k, str(v).strip())
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
     return next(c for c in listing() if c["id"] == cid)
 
 
 def disconnect(cid: str) -> dict:
-    """Forget every secret for this connector (tokens and client credentials)."""
+    """Forget this connector's sign-in and secrets. A shared Google client is kept while
+    another Google connector still uses it."""
     if cid not in PRESETS:
         raise ConnectorError("unknown connector")
-    for k in [*PRESETS[cid]["secrets"], "refresh_token"]:
-        _set_secret(cid, k, "")
+    p = PRESETS[cid]
+    _sset(cid, "refresh_token", "")
     _ACCESS.pop(cid, None)
+    others = [o for o, q in PRESETS.items() if o != cid and q.get("oauth") == "google" and _sget(o, "refresh_token")]
+    for k in p["secrets"]:
+        if not (p.get("oauth") == "google" and k in _SHARED_GOOGLE and others):
+            _sset(cid, k, "")
     return next(c for c in listing() if c["id"] == cid)
 
 
@@ -149,17 +182,19 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def google_auth_url(redirect_uri: str) -> str:
-    client_id = _get_secret("gmail", "client_id")
-    if not client_id or not _get_secret("gmail", "client_secret"):
+def google_auth_url(cid: str, redirect_uri: str) -> str:
+    if PRESETS.get(cid, {}).get("oauth") != "google":
+        raise ConnectorError("not a Google connector")
+    client_id = _sget(cid, "client_id")
+    if not client_id or not _sget(cid, "client_secret"):
         raise ConnectorError("Save your Google OAuth client ID and secret first.")
     verifier = _secrets.token_urlsafe(64)
     state = _secrets.token_urlsafe(24)
     _PENDING.clear()  # one sign-in at a time; an old tab can't complete a newer flow
-    _PENDING[state] = (verifier, redirect_uri, time.time())
+    _PENDING[state] = (cid, verifier, redirect_uri, time.time())
     return GOOGLE_AUTH_URL + "?" + urlencode({
         "client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code",
-        "scope": GMAIL_SCOPE, "access_type": "offline", "prompt": "consent", "state": state,
+        "scope": PRESETS[cid]["scope"], "access_type": "offline", "prompt": "consent", "state": state,
         "code_challenge": _b64url(hashlib.sha256(verifier.encode()).digest()),
         "code_challenge_method": "S256",
     })
@@ -182,38 +217,40 @@ def _token_request(form: dict) -> dict:
         raise ConnectorError(f"Can't reach Google: {e.reason}")
 
 
-def google_callback(state: str, code: str) -> None:
+def google_callback(state: str, code: str) -> str:
+    """Finish sign-in; returns the connector id that was connected."""
     pending = _PENDING.pop(state, None)
-    if pending is None or time.time() - pending[2] > 600:
-        raise ConnectorError("This sign-in link expired or didn't start in Kiroku. Click Connect Gmail again.")
-    verifier, redirect_uri, _ = pending
+    if pending is None or time.time() - pending[3] > 600:
+        raise ConnectorError("This sign-in link expired or didn't start in Kiroku. Click Connect again.")
+    cid, verifier, redirect_uri, _ = pending
     data = _token_request({"code": code, "grant_type": "authorization_code", "redirect_uri": redirect_uri,
-                           "client_id": _get_secret("gmail", "client_id"),
-                           "client_secret": _get_secret("gmail", "client_secret"), "code_verifier": verifier})
+                           "client_id": _sget(cid, "client_id"),
+                           "client_secret": _sget(cid, "client_secret"), "code_verifier": verifier})
     if not data.get("refresh_token"):
         raise ConnectorError("Google didn't return a refresh token. Remove Kiroku's access at "
                              "myaccount.google.com/permissions and connect again.")
-    _set_secret("gmail", "refresh_token", data["refresh_token"])
-    _ACCESS["gmail"] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)) - 60)
+    _sset(cid, "refresh_token", data["refresh_token"])
+    _ACCESS[cid] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)) - 60)
+    return cid
 
 
-def _google_access_token() -> str:
-    token, expires = _ACCESS.get("gmail", ("", 0.0))
+def _google_access_token(cid: str) -> str:
+    token, expires = _ACCESS.get(cid, ("", 0.0))
     if token and time.time() < expires:
         return token
-    refresh = _get_secret("gmail", "refresh_token")
+    label = PRESETS[cid]["label"]
+    refresh = _sget(cid, "refresh_token")
     if not refresh:
-        raise ConnectorError("Gmail isn't connected yet. Connect it in Settings → Connectors.")
+        raise ConnectorError(f"{label} isn't connected yet. Connect it in Settings → Connectors.")
     try:
         data = _token_request({"grant_type": "refresh_token", "refresh_token": refresh,
-                               "client_id": _get_secret("gmail", "client_id"),
-                               "client_secret": _get_secret("gmail", "client_secret")})
+                               "client_id": _sget(cid, "client_id"), "client_secret": _sget(cid, "client_secret")})
     except ConnectorError as e:
         if "invalid_grant" in str(e):  # revoked, password change, or 7-day expiry of Testing apps
-            _set_secret("gmail", "refresh_token", "")
-            raise ConnectorError("Gmail access expired or was revoked. Click Connect Gmail again.")
+            _sset(cid, "refresh_token", "")
+            raise ConnectorError(f"{label} access expired or was revoked. Connect it again in Settings.")
         raise
-    _ACCESS["gmail"] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)) - 60)
+    _ACCESS[cid] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)) - 60)
     return data["access_token"]
 
 
@@ -241,7 +278,7 @@ async def _session(cid: str, fn, errlog, statuses: list[int] | None = None):
     from mcp import ClientSession
     if PRESETS[cid]["transport"] == "http":
         from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
-        headers = {"Authorization": f"Bearer {_google_access_token()}"}
+        headers = {"Authorization": f"Bearer {_google_access_token(cid)}"}
         async with create_mcp_http_client(headers=headers) as http:
             async def record(resp):  # the SDK reports HTTP failures without their status
                 if statuses is not None and resp.status_code >= 400:
@@ -285,13 +322,14 @@ def _run(cid: str, fn, timeout: float = 90):
             reason = _server_error(errlog.read())
             if reason and "invalid_auth" in reason:
                 raise ConnectorError(f"{label} rejected the token. Copy the Bot User OAuth Token again and save it.")
-            if cid == "gmail" and 401 in statuses:
+            google = PRESETS[cid].get("oauth") == "google"
+            if google and 401 in statuses:
                 _ACCESS.pop(cid, None)
-                raise ConnectorError("Google didn't accept the sign-in. Click Disconnect, then Connect Gmail again.")
-            if cid == "gmail" and 403 in statuses:
-                raise ConnectorError("Google refused the request. Check that the Gmail MCP API is enabled in your "
-                                     "Google Cloud project and that your OAuth client has “Use this client for an "
-                                     "AI-powered agent” ticked.")
+                raise ConnectorError(f"Google didn't accept the sign-in. Disconnect {label}, then connect it again.")
+            if google and 403 in statuses:
+                raise ConnectorError(f"Google refused the request. Check that the {PRESETS[cid]['api']} is enabled in "
+                                     "your Google Cloud project and that your OAuth client has “Use this client for "
+                                     "an AI-powered agent” ticked.")
             status = f" (HTTP {statuses[-1]})" if statuses else ""
             raise ConnectorError(f"{label} connector failed: {reason or _root(e)}{status}")
 
@@ -382,3 +420,41 @@ def gmail_draft(to: list[str], subject: str, body: str) -> str:
         return str(json.loads(out).get("id", ""))
     except (ValueError, AttributeError):
         return ""
+
+
+# ---- Google Calendar -------------------------------------------------------------------
+
+def _structured(result) -> dict:
+    if getattr(result, "structuredContent", None):
+        return result.structuredContent
+    try:
+        return json.loads(_text(result))
+    except ValueError:
+        raise ConnectorError("Calendar returned something Kiroku can't read.")
+
+
+def calendar_upcoming(hours: int = 24) -> list[dict]:
+    """Events from 30 min ago to `hours` ahead on the primary calendar (read-only)."""
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    fmt = "%Y-%m-%dT%H:%M:%S"  # local time, no offset, as the tool expects
+
+    async def fn(s):
+        r = await s.call_tool("list_events", {"startTime": (now - timedelta(minutes=30)).strftime(fmt),
+                                              "endTime": (now + timedelta(hours=hours)).strftime(fmt),
+                                              "orderBy": "startTime", "pageSize": 15})
+        if r.isError:
+            _text(r)
+        return _structured(r)
+    out = []
+    for e in _run("calendar", fn).get("events", []):
+        start = (e.get("start") or {}).get("dateTime")
+        if not start or e.get("status") == "cancelled":  # all-day events and cancellations aren't meetings
+            continue
+        attendees = [a["email"] for a in e.get("attendees", [])
+                     if a.get("email") and not a.get("resource") and not a.get("self")
+                     and a.get("responseStatus") != "declined"]
+        out.append({"id": e.get("id", ""), "title": e.get("summary") or "(no title)", "start": start,
+                    "end": (e.get("end") or {}).get("dateTime", ""), "attendees": attendees,
+                    "meet": ((e.get("conferenceData") or {}).get("videoEntryPoint") or {}).get("uri", "")})
+    return out

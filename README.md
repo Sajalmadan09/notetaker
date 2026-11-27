@@ -207,8 +207,15 @@ Keychain injected as env vars. Settings → Connectors guides setup; the meeting
   the server offers 28 tools incl. send/trash, which the app never calls.
   Testing-mode Google apps get 7-day refresh tokens (user sees a reconnect prompt).
   `create_draft` is labelled Developer Preview on Google's docs.
-- More API: `POST /api/connectors/{id}/disconnect`, `POST /api/connectors/gmail/connect`,
-  `GET|POST /api/history/{id}/share/gmail`.
+- Google Calendar: Google's official `https://calendarmcp.googleapis.com/mcp/v1`, scope
+  `calendar.events.readonly` (read-only), only `list_events` is called. Record page shows
+  "Up next" (next 24 h, timed, not cancelled); "Record this" names the recording after the event
+  and stores attendees (excluding you, rooms, decliners), which prefill the Gmail draft's To.
+- Gmail and Calendar share one Google OAuth client (Keychain `connector:google:*`); each has
+  its own refresh token and scope. Disconnecting the last Google connector forgets the client.
+- More API: `POST /api/connectors/{id}/disconnect`, `POST /api/connectors/{id}/connect`
+  (Google), `GET /api/connectors/google/callback`, `GET /api/calendar/upcoming`,
+  `GET|POST /api/history/{id}/share/gmail`; `POST /api/jobs` accepts `title`, `attendees`.
 
 ## UI system
 

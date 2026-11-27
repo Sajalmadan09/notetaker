@@ -249,3 +249,26 @@ def test_cross_site_writes_and_foreign_hosts_blocked():
         assert e.code == 403
     status, _ = get("/api/llm/settings")
     assert status == 200
+
+
+@needs_weights
+def test_job_keeps_calendar_title_and_attendees():
+    boundary = "----notetakerboundary"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\n").encode() + wav_bytes() + b"\r\n"
+    for key, val in [("lang", "hi"), ("title", "Weekly sync"), ("attendees", "asha@x.com, bad, ravi@x.com")]:
+        body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{val}\r\n").encode()
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(BASE + "/api/jobs", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        job_id = json.loads(r.read())["job_id"]
+    for _ in range(120):
+        _, job = get(f"/api/jobs/{job_id}")
+        if job["status"] in ("done", "error"):
+            break
+        time.sleep(0.5)
+    _, rec = get(f"/api/history/{job_id}")
+    assert rec["title"] == "Weekly sync" and rec["attendees"] == ["asha@x.com", "ravi@x.com"]
+    _, preview = get(f"/api/history/{job_id}/share/gmail")
+    assert preview["to"] == ["asha@x.com", "ravi@x.com"]

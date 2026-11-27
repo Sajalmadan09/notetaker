@@ -21,6 +21,7 @@ export type Connector = {
   fields: Record<string, string>; values: Record<string, string>; has_secret: Record<string, boolean>;
   configured: boolean; needs_node: boolean;
 };
+export type CalEvent = { id: string; title: string; start: string; end: string; attendees: string[]; meet: string };
 export type LLMSettings = { provider: string; summary_language: string; providers: Record<string, Provider> };
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -54,8 +55,9 @@ export const api = {
     call<Connector>(`/api/connectors/${id}`, { method: "PUT", json: body }),
   testConnector: (id: string) => call<{ tools: string[] }>(`/api/connectors/${id}/test`, { method: "POST" }),
   disconnectConnector: (id: string) => call<Connector>(`/api/connectors/${id}/disconnect`, { method: "POST" }),
-  gmailConnect: () => call<{ url: string; redirect_uri: string }>("/api/connectors/gmail/connect", { method: "POST" }),
-  gmailPreview: (rid: string) => call<{ subject: string; body: string }>(`/api/history/${rid}/share/gmail`),
+  googleConnect: (id: string) => call<{ url: string; redirect_uri: string }>(`/api/connectors/${id}/connect`, { method: "POST" }),
+  gmailPreview: (rid: string) => call<{ subject: string; body: string; to: string[] }>(`/api/history/${rid}/share/gmail`),
+  upcoming: () => call<CalEvent[]>("/api/calendar/upcoming"),
   gmailDraft: (rid: string, to: string[], subject: string, body: string) =>
     call<{ draft_id: string }>(`/api/history/${rid}/share/gmail`, { method: "POST", json: { to, subject, body } }),
   slackChannels: () => call<{ id: string; name: string }[]>("/api/connectors/slack/channels"),

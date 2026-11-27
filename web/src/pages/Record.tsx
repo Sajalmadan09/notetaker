@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, type CalEvent } from "../api";
 import { toWav16k, watchLevel } from "../audio";
 import { clock, Icon, useToast } from "../ui";
 
@@ -34,18 +34,24 @@ export default function Record() {
   const [stage, setStage] = useState(["", ""]);
   const [progress, setProgress] = useState(0);
   const rec = useRef<{ mr: MediaRecorder; cleanup: () => void } | null>(null);
+  const [events, setEvents] = useState<CalEvent[] | null>(null);
+  const [chosen, setChosen] = useState<CalEvent | null>(null);
+  const chosenRef = useRef<CalEvent | null>(null);  // read when the recording finishes, after the click's render
+  const pick = (e: CalEvent | null) => { chosenRef.current = e; setChosen(e); };
   const canTab = !!navigator.mediaDevices?.getDisplayMedia;
 
   useEffect(() => {
     api.languages().then(setLangs).catch(() => setErr("The local engine isn't ready. Finish setup or restart the app."));
     api.health().then(h => { setTorch(h.torch); if (!h.torch) setEngine("int4"); }).catch(() => {});
+    api.upcoming().then(setEvents).catch(() => setEvents(null));  // hidden unless Calendar is connected
   }, []);
   useEffect(() => {
     for (const [k, v] of Object.entries({ lang, speakers: spk, engine, mode })) localStorage.setItem(`kiroku.${k}`, v);
   }, [lang, spk, engine, mode]);
   useEffect(() => () => rec.current?.cleanup(), []);
 
-  const opts = () => ({ lang, speakers: spk, engine, mode: engine === "int4" ? "native" : mode });
+  const opts = () => ({ lang, speakers: spk, engine, mode: engine === "int4" ? "native" : mode,
+    title: chosenRef.current?.title ?? "", attendees: (chosenRef.current?.attendees ?? []).join(",") });
 
   async function submit(blob: Blob) {
     setPhase("working"); setErr(""); setStage(STAGES.converting); setProgress(0);
@@ -63,6 +69,7 @@ export default function Record() {
       setProgress(j.progress || 0);
       if (j.status === "done") {
         toast("Transcript ready");
+        pick(null);
         location.hash = `#/r/${jobId}`;  // job id is the recording id
         return;
       }
@@ -143,6 +150,8 @@ export default function Record() {
             {phase === "recording" ? <span className="stopsq" /> : <Icon name="mic" size={40} />}
           </button>
         </div>
+        {chosen && <div className="chip red">For: {chosen.title}
+          {phase === "idle" && <button className="x" onClick={() => pick(null)} aria-label="Clear event">×</button>}</div>}
         <div className="bigclock mono">{clock(elapsed)}</div>
         <div className="meter" aria-hidden="true">
           {bars.map((b, i) => <i key={i} style={{ height: `${Math.max(6, b * 100)}%` }} />)}
@@ -195,6 +204,27 @@ export default function Record() {
               </select></label>}
           </div>
         </details>
+      )}
+
+      {phase === "idle" && events && events.length > 0 && (
+        <section style={{ marginTop: 28 }}>
+          <h2 className="kicker">Up next <span className="ja">予定</span></h2>
+          <div className="events">{events.map(e => {
+            const t = (s: string) => new Date(s).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+            const now = Date.now(), live = new Date(e.start).getTime() <= now && now < new Date(e.end).getTime();
+            return (
+              <div className={`event ${live ? "now" : ""}`} key={e.id}>
+                <div className="when mono">{t(e.start)}<span className="muted"> – {t(e.end)}</span></div>
+                <div className="what"><b>{e.title}</b>
+                  <span className="muted">{live ? "Happening now · " : ""}{e.attendees.length ? `${e.attendees.length} other${e.attendees.length === 1 ? "" : "s"}` : "Just you"}</span></div>
+                {e.meet && <a className="btn ghost" href={e.meet} target="_blank" rel="noreferrer">Join</a>}
+                <button className="btn" onClick={() => { pick(e); recordMic(); }}>Record this</button>
+              </div>);
+          })}</div>
+        </section>
+      )}
+      {phase === "idle" && events && events.length === 0 && (
+        <p className="muted" style={{ marginTop: 22 }}>No meetings in the next 24 hours on your calendar.</p>
       )}
 
       {live.length > 0 && (

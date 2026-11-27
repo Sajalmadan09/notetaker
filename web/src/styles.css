@@ -266,3 +266,12 @@ mark { background: linear-gradient(transparent 50%, var(--hl) 50%); color: inher
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
 .steps a { color: var(--red); font-weight: 600; }
 code { font-family: var(--f-mono); font-size: .9em; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
+
+/* ---- up next ---- */
+.events { display: grid; gap: 8px; }
+.event { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 12px; align-items: center; padding: 10px 14px; border: 2px solid var(--ink); border-radius: var(--r); background: var(--card); }
+.event.now { box-shadow: 3px 3px 0 var(--red); border-color: var(--red); }
+.event .what { display: grid; min-width: 0; }
+.event .what b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event .what span { font-size: 13px; }
+.chip .x { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; padding: 0 0 0 4px; }

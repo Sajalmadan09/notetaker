@@ -71,7 +71,8 @@ def _set(job_id: str, **fields) -> None:
         JOBS[job_id].update(fields)
 
 
-def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, mode: str) -> None:
+def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, mode: str,
+            meta: dict | None = None) -> None:
     try:
         _set(job_id, status="running", stage="loading")
         audio, sr = sf.read(path, dtype="float32", always_2d=True)
@@ -95,6 +96,7 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, 
             "turn_count": len(doc["turns"]),
             "preview": (doc["turns"][0]["text"][:80] if doc["turns"] else ""),
             "turns": doc["turns"],
+            **(meta or {}),  # calendar event title + attendees, when recorded from an event
         }, path)
     except Exception as e:
         _set(job_id, status="error", error=f"{type(e).__name__}: {e}")
@@ -131,6 +133,7 @@ def languages() -> list[str]:
 @app.post("/api/jobs")
 async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
                      speakers: str = Form("auto"), engine: str = Form(""),
+                     title: str = Form(""), attendees: str = Form(""),
                      mode: str = Form("")) -> dict:
     engine = engine or os.environ.get("NOTETAKER_ENGINE", "int4")  # extension/helper send none
     mode = mode or os.environ.get("NOTETAKER_MODE", "native")
@@ -164,7 +167,13 @@ async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
         JOBS[job_id] = {"status": "queued", "stage": "queued", "progress": 0.0,
                         "lang": lang, "speakers": speakers, "engine": engine, "mode": mode,
                         "result": None, "error": None, "detected_lang": None}
-    EXECUTOR.submit(_worker, job_id, tmp, lang, num_clusters, engine, mode)
+    meta = {}
+    if title.strip():
+        meta["title"] = title.strip()[:120]
+    emails = [a.strip() for a in attendees.split(",") if connectors._EMAIL.match(a.strip())][:50]
+    if emails:
+        meta["attendees"] = emails
+    EXECUTOR.submit(_worker, job_id, tmp, lang, num_clusters, engine, mode, meta)
     return {"job_id": job_id}
 
 
@@ -314,6 +323,27 @@ def connectors_test(cid: str) -> dict:
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/connectors/{cid}/connect")
+def google_connect(cid: str, request: Request) -> dict:
+    """Start Google sign-in in the system browser (Google blocks sign-in inside embedded webviews)."""
+    import webbrowser
+    redirect = f"http://127.0.0.1:{request.url.port or 80}/api/connectors/google/callback"
+    try:
+        url = connectors.google_auth_url(cid, redirect)
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+    webbrowser.open(url)
+    return {"url": url, "redirect_uri": redirect}
+
+
+@app.get("/api/calendar/upcoming")
+def calendar_upcoming() -> list[dict]:
+    try:
+        return connectors.calendar_upcoming()
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/connectors/{cid}/disconnect")
 def connectors_disconnect(cid: str) -> dict:
     try:
@@ -322,29 +352,16 @@ def connectors_disconnect(cid: str) -> dict:
         raise HTTPException(400, str(e))
 
 
-@app.post("/api/connectors/gmail/connect")
-def gmail_connect(request: Request) -> dict:
-    """Start Google sign-in in the system browser (Google blocks sign-in inside embedded webviews)."""
-    import webbrowser
-    redirect = f"http://127.0.0.1:{request.url.port or 80}/api/connectors/gmail/callback"
-    try:
-        url = connectors.google_auth_url(redirect)
-    except connectors.ConnectorError as e:
-        raise HTTPException(400, str(e))
-    webbrowser.open(url)
-    return {"url": url, "redirect_uri": redirect}
-
-
-@app.get("/api/connectors/gmail/callback")
-def gmail_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
+@app.get("/api/connectors/google/callback")
+def google_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
     import html
     try:
         if error:
             raise connectors.ConnectorError(f"Google sign-in was cancelled ({error}).")
-        connectors.google_callback(state, code)
-        title, msg, ok = "Gmail connected", "You can close this tab and go back to Kiroku.", True
+        cid = connectors.google_callback(state, code)
+        title, msg, ok = f"{connectors.PRESETS[cid]['label']} connected", "You can close this tab and go back to Kiroku.", True
     except connectors.ConnectorError as e:
-        title, msg, ok = "Gmail not connected", str(e), False
+        title, msg, ok = "Not connected", str(e), False
     color = "#4f7a34" if ok else "#d23a2a"
     return HTMLResponse(f"""<!doctype html><meta charset="utf-8"><title>{title}</title>
 <body style="font:16px -apple-system,sans-serif;background:#f3ede2;color:#1a1714;display:grid;place-items:center;height:100vh;margin:0">
@@ -360,7 +377,7 @@ def gmail_preview(rid: str) -> dict:
     if record is None:
         raise HTTPException(404, "unknown recording")
     return {"subject": f"Notes: {record.get('title') or 'meeting'} ({record.get('ts', '')[:10]})",
-            "body": connectors.notes_markdown(record, plain=True)}
+            "body": connectors.notes_markdown(record, plain=True), "to": record.get("attendees", [])}
 
 
 @app.post("/api/history/{rid}/share/gmail")

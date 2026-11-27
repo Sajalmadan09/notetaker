@@ -70,13 +70,13 @@ from urllib.parse import parse_qs, urlparse
 
 
 def _gmail_creds(isolated):
-    isolated[("gmail", "client_id")] = "cid.apps.googleusercontent.com"
-    isolated[("gmail", "client_secret")] = "shh"
+    isolated[("google", "client_id")] = "cid.apps.googleusercontent.com"
+    isolated[("google", "client_secret")] = "shh"
 
 
 def test_gmail_needs_client_and_sign_in(isolated):
     with pytest.raises(connectors.ConnectorError, match="client ID"):
-        connectors.google_auth_url("http://127.0.0.1:8010/cb")
+        connectors.google_auth_url("gmail", "http://127.0.0.1:8010/cb")
     _gmail_creds(isolated)
     gmail = next(c for c in connectors.listing() if c["id"] == "gmail")
     assert not gmail["configured"]  # credentials alone aren't a connection
@@ -84,23 +84,23 @@ def test_gmail_needs_client_and_sign_in(isolated):
 
 def test_google_auth_url_uses_pkce_and_compose_scope(isolated):
     _gmail_creds(isolated)
-    q = {k: v[0] for k, v in parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query).items()}
+    q = {k: v[0] for k, v in parse_qs(urlparse(connectors.google_auth_url("gmail", "http://127.0.0.1:8010/cb")).query).items()}
     assert q["scope"] == "https://www.googleapis.com/auth/gmail.compose"
     assert q["code_challenge_method"] == "S256" and q["access_type"] == "offline"
-    verifier = connectors._PENDING[q["state"]][0]
+    verifier = connectors._PENDING[q["state"]][1]
     assert q["code_challenge"] == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
 
 def test_google_callback_checks_state_and_stores_refresh_token(isolated, monkeypatch):
     _gmail_creds(isolated)
-    q = parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query)
+    q = parse_qs(urlparse(connectors.google_auth_url("gmail", "http://127.0.0.1:8010/cb")).query)
     with pytest.raises(connectors.ConnectorError, match="expired"):
         connectors.google_callback("forged-state", "code")
-    q = parse_qs(urlparse(connectors.google_auth_url("http://127.0.0.1:8010/cb")).query)
+    q = parse_qs(urlparse(connectors.google_auth_url("gmail", "http://127.0.0.1:8010/cb")).query)
     sent = {}
     monkeypatch.setattr(connectors, "_token_request", lambda form: sent.update(form) or
                         {"access_token": "at", "refresh_token": "rt", "expires_in": 3600})
-    connectors.google_callback(q["state"][0], "the-code")
+    assert connectors.google_callback(q["state"][0], "the-code") == "gmail"
     assert sent["code_verifier"] and sent["redirect_uri"] == "http://127.0.0.1:8010/cb"
     assert isolated[("gmail", "refresh_token")] == "rt"
     assert next(c for c in connectors.listing() if c["id"] == "gmail")["configured"]
@@ -116,8 +116,8 @@ def test_revoked_refresh_token_is_forgotten(isolated, monkeypatch):
     def boom(form):
         raise connectors.ConnectorError("Google sign-in failed: invalid_grant")
     monkeypatch.setattr(connectors, "_token_request", boom)
-    with pytest.raises(connectors.ConnectorError, match="Connect Gmail again"):
-        connectors._google_access_token()
+    with pytest.raises(connectors.ConnectorError, match="(?i)connect it again"):
+        connectors._google_access_token("gmail")
     assert ("gmail", "refresh_token") not in isolated
 
 
@@ -141,3 +141,45 @@ def test_plain_notes_have_no_markdown():
                                                  "action_items": [{"text": "Do it", "owner": "Asha", "done": True}]}},
                                     plain=True)
     assert "**" not in txt and "_" not in txt and "- [x] Do it (Asha)" in txt
+
+
+
+# ---- Calendar + shared Google client ---------------------------------------------------
+
+def test_google_connectors_share_client_but_not_sign_in(isolated, monkeypatch):
+    connectors.save("gmail", secrets={"client_id": "x.apps.googleusercontent.com", "client_secret": "s"})
+    cal = next(c for c in connectors.listing() if c["id"] == "calendar")
+    assert cal["has_secret"] == {"client_id": True, "client_secret": True} and not cal["configured"]
+    q = parse_qs(urlparse(connectors.google_auth_url("calendar", "http://127.0.0.1:8010/cb")).query)
+    assert q["scope"] == ["https://www.googleapis.com/auth/calendar.events.readonly"]  # read-only
+    monkeypatch.setattr(connectors, "_token_request", lambda f: {"access_token": "a", "refresh_token": "r-cal"})
+    assert connectors.google_callback(q["state"][0], "c") == "calendar"
+    isolated[("gmail", "refresh_token")] = "r-gmail"
+    connectors.disconnect("calendar")  # Gmail still signed in -> shared client kept
+    assert ("calendar", "refresh_token") not in isolated and ("google", "client_id") in isolated
+    connectors.disconnect("gmail")  # last one out forgets the client
+    assert ("google", "client_id") not in isolated
+
+
+def test_calendar_upcoming_parses_and_filters(monkeypatch):
+    events = {"events": [
+        {"id": "1", "summary": "Standup", "start": {"dateTime": "2026-11-28T10:00:00+05:30"},
+         "end": {"dateTime": "2026-11-28T10:15:00+05:30"},
+         "conferenceData": {"videoEntryPoint": {"uri": "https://meet.google.com/abc-defg-hij"}},
+         "attendees": [{"email": "me@x.com", "self": True}, {"email": "asha@x.com"},
+                       {"email": "room@resource.calendar.google.com", "resource": True},
+                       {"email": "no@x.com", "responseStatus": "declined"}]},
+        {"id": "2", "summary": "Holiday", "start": {"date": "2026-11-28"}},
+        {"id": "3", "summary": "Gone", "status": "cancelled", "start": {"dateTime": "2026-11-28T12:00:00Z"}}]}
+    seen = {}
+
+    class FakeSession:
+        async def call_tool(self, name, args):
+            seen[name] = args
+            return SimpleNamespace(isError=False, structuredContent=events, content=[])
+    monkeypatch.setattr(connectors, "_run", lambda cid, fn: asyncio.run(fn(FakeSession())))
+    out = connectors.calendar_upcoming()
+    assert list(seen) == ["list_events"] and "Z" not in seen["list_events"]["startTime"]
+    assert out == [{"id": "1", "title": "Standup", "start": "2026-11-28T10:00:00+05:30",
+                    "end": "2026-11-28T10:15:00+05:30", "attendees": ["asha@x.com"],
+                    "meet": "https://meet.google.com/abc-defg-hij"}]
