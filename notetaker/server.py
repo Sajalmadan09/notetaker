@@ -20,7 +20,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import connectors, history, llm, setup
+from . import appshell, connectors, history, llm, setup
 from .asr import Int4Asr, available_languages
 from .asr_torch import FLEX_REPO, TorchAsr
 from .audio import SR
@@ -142,6 +142,21 @@ def health() -> dict:
             "torch": _has_torch(), "flex": _has_torch() and setup.flex_present(),
             "flex_loaded": FLEX_ASR.loaded, "core": _has_torch() and setup.core_present(),
             "default_engine": engine, "default_mode": mode}
+
+
+@app.post("/api/app/show")
+def app_show() -> dict:
+    """Menu bar → Open Kiroku. No-op when running without a native window (browser/dev)."""
+    if appshell.show:
+        appshell.show()
+    return {"window": appshell.show is not None}
+
+
+@app.post("/api/app/quit")
+def app_quit() -> dict:
+    if appshell.quit:
+        appshell.quit()
+    return {"window": appshell.quit is not None}
 
 
 @app.get("/api/languages")

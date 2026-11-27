@@ -382,12 +382,32 @@ nsApp.setActivationPolicy(.accessory)
 // Menu-bar indicator: idle / listening / processing, always visible.
 let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 statusItem.button?.title = "🎙"
+statusItem.button?.toolTip = "Kiroku"
+// The app's window can be closed while Kiroku keeps running; this menu brings it back or quits.
+final class AppMenu: NSObject {
+    @objc func openApp() { post("/api/app/show") }
+    @objc func quitApp() { post("/api/app/quit", orQuitSelf: true) }
+    func post(_ path: String, orQuitSelf: Bool = false) {
+        var r = URLRequest(url: URL(string: serverURL + path)!)
+        r.httpMethod = "POST"
+        r.timeoutInterval = 3
+        URLSession.shared.dataTask(with: r) { _, _, err in  // app not reachable: at least stop the helper
+            if err != nil && orQuitSelf { DispatchQueue.main.async { NSApp.terminate(nil) } }
+        }.resume()
+    }
+}
+let appMenu = AppMenu()
 let statusMenu = NSMenu()
-statusMenu.addItem(NSMenuItem(title: "Hold <3s: push-to-talk · hold ≥3s: latch · press again: stop",
+let openItem = NSMenuItem(title: "Open Kiroku", action: #selector(AppMenu.openApp), keyEquivalent: "o")
+openItem.target = appMenu
+statusMenu.addItem(openItem)
+statusMenu.addItem(.separator())
+statusMenu.addItem(NSMenuItem(title: "Dictate: hold ⌥Space (hold 3 s to keep listening, press again to stop)",
                               action: nil, keyEquivalent: ""))
 statusMenu.addItem(.separator())
-statusMenu.addItem(NSMenuItem(title: "Quit NotetakerHelper",
-                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+let quitItem = NSMenuItem(title: "Quit Kiroku", action: #selector(AppMenu.quitApp), keyEquivalent: "q")
+quitItem.target = appMenu
+statusMenu.addItem(quitItem)
 statusItem.menu = statusMenu
 func setStatus(_ emoji: String) { statusItem.button?.title = emoji }
 

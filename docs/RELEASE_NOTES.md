@@ -40,6 +40,10 @@ recordings never leave your computer.
 - **Upload audio:** any recording your browser can play works.
 - **Library:** all your recordings. Click one to read it, play it back, rename people
   ("Speaker 1" → "Asha"), and export it as a document, text or PDF.
+- **Closing the window doesn't quit Kiroku.** It keeps running, so recordings, downloads
+  and dictation carry on. Click **🎙** in the menu bar (top right of your screen) →
+  **Open Kiroku** to bring it back, or click Kiroku in the Dock. To quit completely:
+  **🎙 → Quit Kiroku**, or press **⌘Q** while Kiroku is in front.
 - **Dictate anywhere:** hold **Option + Space**, speak, let go. The text is typed where
   your cursor is. Hold for 3 seconds to keep listening hands-free; press again to stop.
 
@@ -111,4 +115,6 @@ delete the **Kiroku** folder in your user folder → Library → Application Sup
 - The Hinglish (code-mix) engine as an in-app download.
 - Slack, Gmail and Google Calendar connectors.
 - The Chrome extension names recordings after your calendar event.
+- Closing the window keeps Kiroku running in the menu bar (🎙 → Open / Quit).
 - Fixed: "Detect automatically" no longer fails with the higher-quality engines.
+- Fixed: the Hinglish engine is only switched on once its download has fully finished.
