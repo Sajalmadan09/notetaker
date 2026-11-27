@@ -79,9 +79,11 @@ Setup takes 10–15 minutes and is explained step by step in Settings → Connec
 2. In Chrome, go to **chrome://extensions** and switch on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder.
 4. Click the puzzle-piece icon and pin **Kiroku**.
-5. Open the Kiroku icon → **Settings → Allow microphone**, so your own voice is included.
-
-In a Meet call, click the Kiroku icon → **Record this tab** (or press **Option + Shift + R**).
+When you join a Meet (instant or scheduled), Kiroku reminds you to record. Click the Kiroku
+icon → **Record this tab** (or press **Option + Shift + R**). The very first time, a small window
+asks for your microphone so your own voice is included. Click **Allow** and recording starts.
+Chrome remembers that, so you won't be asked again. To update the extension later, use the
+**Reload** button on chrome://extensions rather than removing it, so it keeps that permission.
 The Kiroku app must be open. Use headphones to avoid echo.
 
 ## Your privacy

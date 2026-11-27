@@ -4,6 +4,14 @@ const clock = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 
 const hhmm = ms => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 let st = { phase: "idle" }, cfg = {}, timer = null;
 
+// Ask Chrome for the extension's real mic permission (a saved flag goes stale if the extension
+// is reinstalled); keep the flag the recorder reads in sync.
+async function micAllowed() {
+  const ok = (await navigator.permissions.query({ name: "microphone" }).catch(() => ({ state: "prompt" }))).state === "granted";
+  await chrome.storage.local.set({ micGranted: ok });
+  return ok;
+}
+
 function banner(msg) { $("banner").hidden = !msg; $("banner").textContent = msg || ""; }
 
 function render() {
@@ -31,9 +39,8 @@ async function refresh() {
   ({ state: st, settings: cfg } = await send({ type: "status" }));
   render();
   if (st.phase === "idle" && !st.message) {  // say it before recording, not after a silent meeting
-    const { micGranted } = await chrome.storage.local.get("micGranted");
     banner(!cfg.mic ? "Your own voice won't be recorded: “Include my microphone” is off in Settings."
-      : !micGranted ? "One-time step so your own voice is recorded: open Settings below → click “allow mic” → Allow." : "");
+      : !(await micAllowed()) ? "First recording asks once for the microphone so your own voice is included." : "");
   }
 }
 
@@ -58,11 +65,16 @@ async function loadUpcoming(force) {
 async function init() {
   await refresh();
   $("server").value = cfg.server; $("lang").value = cfg.lang; $("mode").value = cfg.mode || "";
-  $("mic").checked = cfg.mic; $("auto").checked = cfg.autoCapture; $("ics").value = cfg.icsUrl;
+  $("mic").checked = cfg.mic; $("auto").checked = cfg.autoCapture; $("suggest").checked = cfg.suggest; $("ics").value = cfg.icsUrl;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   $("atitle").textContent = tab ? (tab.title || tab.url || "").slice(0, 60) : "";
   $("start").onclick = async () => {
     banner(""); $("start").disabled = true;
+    if (cfg.mic && !(await micAllowed())) {  // one-time: grant the mic, then the window starts recording
+      const url = chrome.runtime.getURL(`mic.html?tab=${tab.id}&title=${encodeURIComponent(tab.title || "")}`);
+      await chrome.windows.create({ url, type: "popup", width: 460, height: 300, focused: true });
+      return window.close();
+    }
     const r = await send({ type: "start", tabId: tab.id, title: tab.title });
     $("start").disabled = false;
     if (!r.ok) banner(r.error); await refresh();
@@ -80,7 +92,7 @@ $("refresh").onclick = () => loadUpcoming(true);
 $("grant").onclick = e => { e.preventDefault(); send({ type: "grant-mic" }); };
 $("save").onclick = async () => {
   const settings = { server: $("server").value.trim().replace(/\/$/, ""), lang: $("lang").value, mode: $("mode").value,
-    mic: $("mic").checked, autoCapture: $("auto").checked, icsUrl: $("ics").value.trim() };
+    mic: $("mic").checked, autoCapture: $("auto").checked, icsUrl: $("ics").value.trim(), suggest: $("suggest").checked };
   await send({ type: "save-settings", settings });
   $("saved").textContent = "Saved"; setTimeout(() => $("saved").textContent = "", 1500);
   await refresh(); loadUpcoming(true);

@@ -1,7 +1,8 @@
 // Service worker: capture lifecycle, calendar (secret iCal URL) watcher, notifications, shortcut.
 import { parseIcs, occurrences } from "./ics.js";
 
-const DEFAULTS = { server: "http://127.0.0.1:8010", lang: "hi", icsUrl: "", autoCapture: false, mic: true, engine: "", mode: "" };
+const DEFAULTS = { server: "http://127.0.0.1:8010", lang: "hi", icsUrl: "", autoCapture: false, mic: true, engine: "", mode: "", suggest: true };
+const MEET_ROOM = /^https:\/\/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i;
 const MEET_CODE = /meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i;
 const ICON = "icon128.png";
 const ICS_TTL = 5 * 60 * 1000;
@@ -55,6 +56,7 @@ async function startCapture(tabId, title, attendees) {
       title: meetingTitle, attendees: people,
     });
     if (!res?.ok) throw new Error(res?.error || "recorder unavailable");
+    chrome.action.setBadgeText({ tabId, text: "REC" });
     await setState({ phase: "recording", tabId, title: meetingTitle || tab.title || "Meeting", startedAt: Date.now(), preview: "", mic: res.mic, message: "" });
     return { ok: true, mic: res.mic };
   } catch (e) {
@@ -66,7 +68,9 @@ async function startCapture(tabId, title, attendees) {
 }
 
 async function stopCapture() {
-  if ((await getState()).phase !== "recording") return { ok: false, error: "not recording" };
+  const cur = await getState();
+  if (cur.phase !== "recording") return { ok: false, error: "not recording" };
+  if (cur.tabId) chrome.action.setBadgeText({ tabId: cur.tabId, text: "…" });
   await setState({ phase: "processing", stage: "uploading", progress: 0 });
   await chrome.runtime.sendMessage({ type: "offscreen-stop" });
   return { ok: true };
@@ -134,6 +138,20 @@ async function checkCalendar() {
   }
 }
 
+// Joined a Meet room (instant or scheduled): nudge once per meeting. Chrome only allows capture
+// after a click on the extension (or its shortcut) on that tab, so this can't start recording itself.
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  const code = info.status === "complete" && (tab.url?.match(MEET_ROOM) || [])[1];
+  if (!code || !(await settings()).suggest || (await getState()).phase !== "idle") return;
+  const { suggested = {} } = await chrome.storage.session.get("suggested");
+  if (suggested[code]) return;
+  suggested[code] = true;
+  await chrome.storage.session.set({ suggested });
+  chrome.action.setBadgeText({ tabId, text: "REC?" });
+  chrome.action.setBadgeBackgroundColor({ tabId, color: "#d97a3a" });
+  notify("Record this meeting?", "Click the Kiroku icon → Record this tab, or press ⌥⇧R. Kiroku transcribes it on your Mac.", "suggest:" + tabId);
+});
+
 chrome.alarms.create("tick", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(a => { if (a.name === "tick") checkCalendar(); });
 chrome.runtime.onStartup.addListener(() => setState({ phase: "idle" }));
@@ -141,6 +159,7 @@ chrome.runtime.onStartup.addListener(() => setState({ phase: "idle" }));
 const openRecording = async id => chrome.tabs.create({ url: (await settings()).server + "/app/#/r/" + id });
 chrome.notifications.onClicked.addListener(async id => {
   if (id.startsWith("done:")) openRecording(id.slice(5));  // job id is the recording id
+  else if (id.startsWith("suggest:")) chrome.tabs.update(+id.slice(8), { active: true }).catch(() => {});
   else if (id.startsWith("meet:")) { const t = await findMeetTab(id.slice(5)); if (t) chrome.tabs.update(t.id, { active: true }); }
 });
 chrome.notifications.onButtonClicked.addListener(id => { if (id.startsWith("meet:")) chrome.tabs.create({ url: id.slice(5) }); });
@@ -167,14 +186,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "preview": await setState({ preview: msg.text }); return;
       case "processing": return void await setState({ phase: "processing", stage: "queued", jobId: msg.jobId });
       case "progress": return void await setState({ stage: msg.stage, progress: msg.progress });
-      case "done":
+      case "done": {
+        const { tabId } = await getState();
+        if (tabId) chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
         await setState({ phase: "idle", lastJob: msg.jobId, message: "" });
         chrome.offscreen.closeDocument().catch(() => {});
         return void notify("Transcript ready", `${msg.turns} turns. Click to open the notes.`, "done:" + msg.jobId);
-      case "error":
+      }
+      case "error": {
+        const { tabId } = await getState();
+        if (tabId) chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
         await setState({ phase: "idle", message: msg.message });
         chrome.offscreen.closeDocument().catch(() => {});
         return void notify("Kiroku error", msg.message);
+      }
     }
   })();
   return true;
