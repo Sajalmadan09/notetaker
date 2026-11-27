@@ -12,6 +12,7 @@ import io
 import json
 import os
 import shutil
+import tempfile
 
 from . import history, paths
 
@@ -120,28 +121,44 @@ def _server_params(cid: str):
     return StdioServerParameters(command=p["command"][0], args=p["command"][1:], env=env)
 
 
-async def _session(cid: str, fn):
+async def _session(cid: str, fn, errlog):
     """Start the connector's MCP server, run fn(session), shut it down."""
-    # ponytail: one process per call (~1-2 s npx start); keep sessions alive if connectors get chatty.
+    # ponytail: one process per call (~2-4 s npx start); keep sessions alive if connectors get chatty.
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
-    params = _server_params(cid)
-    with open(os.devnull, "w") as errlog:
-        async with stdio_client(params, errlog=errlog) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await fn(session)
+    async with stdio_client(_server_params(cid), errlog=errlog) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            return await fn(session)
+
+
+def _server_error(log: str) -> str | None:
+    """Pull the server's own fatal/error message out of its stderr (JSON log lines)."""
+    for line in reversed(log.splitlines()):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("level") in ("fatal", "error"):
+            return f"{entry.get('message', '')} ({entry.get('error', '')})".replace(" ()", "")
+    return None
 
 
 def _run(cid: str, fn, timeout: float = 90):
-    try:
-        return asyncio.run(asyncio.wait_for(_session(cid, fn), timeout))
-    except ConnectorError:
-        raise
-    except TimeoutError:
-        raise ConnectorError(f"{PRESETS[cid]['label']} didn't respond in {timeout:.0f} s.")
-    except Exception as e:  # process crash, protocol error, auth failure at startup
-        raise ConnectorError(f"{PRESETS[cid]['label']} connector failed: {_root(e)}")
+    label = PRESETS[cid]["label"]
+    with tempfile.TemporaryFile("w+") as errlog:  # the server's stderr; may echo config, never kept
+        try:
+            return asyncio.run(asyncio.wait_for(_session(cid, fn, errlog), timeout))
+        except ConnectorError:
+            raise
+        except TimeoutError:
+            raise ConnectorError(f"{label} didn't respond in {timeout:.0f} s.")
+        except Exception as e:  # process crash, protocol error, auth failure at startup
+            errlog.seek(0)
+            reason = _server_error(errlog.read())
+            if reason and "invalid_auth" in reason:
+                raise ConnectorError(f"{label} rejected the token. Copy the Bot User OAuth Token again and save it.")
+            raise ConnectorError(f"{label} connector failed: {reason or _root(e)}")
 
 
 def _root(e: BaseException) -> str:

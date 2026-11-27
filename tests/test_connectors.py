@@ -52,3 +52,10 @@ def test_post_validates_and_notes_include_summary(monkeypatch):
                                     "summary": {"overview": "We shipped.", "decisions": ["Ship Monday"],
                                                 "action_items": [{"text": "Send deck", "owner": "Asha", "done": True}]}})
     assert md.startswith("**Standup**") and "~~Send deck~~ (Asha)" in md and "- Ship Monday" in md
+
+
+def test_server_error_is_extracted_from_stderr():
+    log = ('{"level":"info","message":"Using Bot token"}\nnode noise\n'
+           '{"level":"fatal","message":"Authentication failed - check your Slack tokens","error":"invalid_auth"}\n')
+    assert connectors._server_error(log) == "Authentication failed - check your Slack tokens (invalid_auth)"
+    assert connectors._server_error("plain text") is None
