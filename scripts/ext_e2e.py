@@ -33,14 +33,14 @@ try:
         c = launch(p, ext_id)
         sw = c.service_workers[0] if c.service_workers else c.wait_for_event("serviceworker")
         print("extension", ext_id)
-        page = c.new_page(); page.goto(SERVER + "/dashboard.html")
+        page = c.new_page(); page.goto(SERVER + "/app/")
         page.evaluate(f"(async()=>{{window.a=new Audio('/api/history/{rid}/audio');await a.play();}})()")
         ui = c.new_page(); ui.goto(f"chrome-extension://{ext_id}/popup.html")
         send = lambda m: ui.evaluate("m => chrome.runtime.sendMessage(m)", m)
         save = send({"type": "save-settings", "settings": {"server": SERVER, "lang": "hi", "mic": True, "icsUrl": SERVER + "/_test.ics"}})
         up = send({"type": "upcoming", "force": True}); print("upcoming:", [(o["summary"], bool(o["meetUrl"])) for o in up["items"]], up["error"])
         assert up["items"] and up["items"][0]["meetUrl"], "calendar parse failed"
-        tab_id = ui.evaluate("async () => (await chrome.tabs.query({url: 'http://127.0.0.1:8010/dashboard.html'}))[0].id")
+        tab_id = ui.evaluate("async () => (await chrome.tabs.query({url: 'http://127.0.0.1:8010/app/*'}))[0].id")
         r = send({"type": "start", "tabId": tab_id, "title": "e2e"}); print("start:", r); assert r["ok"], r
         for i in range(8):
             time.sleep(5)

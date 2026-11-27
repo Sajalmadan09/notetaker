@@ -47,13 +47,13 @@ def test_summarize_parses_and_uses_speaker_names(monkeypatch):
         seen["text"] = messages[0]["content"]
         return 'Sure! {"title": "Launch sync", "overview": "o", "decisions": ["Monday"],' \
                ' "action_items": [{"text": "Send deck", "owner": "Asha"}, {"text": ""}],' \
-               ' "chapters": [{"title": "Launch", "start": 65}]}'
+               ' "chapters": [{"title": "Launch", "start": 65}, {"title": "Invented", "start": 999}]}'
     monkeypatch.setattr(llm, "_chat", fake_chat)
     s = llm.summarize(REC)
-    assert "[0:00] Asha:" in seen["text"] and "[1:05] speaker_01:" in seen["text"]
+    assert "[0:00] Asha:" in seen["text"] and "[1:05] Speaker 2:" in seen["text"]
     assert s["title"] == "Launch sync"
     assert s["action_items"] == [{"text": "Send deck", "owner": "Asha", "done": False}]
-    assert s["chapters"][0]["start"] == 65.0 and s["model"] == "m"
+    assert [c["start"] for c in s["chapters"]] == [65.0] and s["model"] == "m"  # 999 > duration dropped
 
 
 def test_summarize_rejects_garbage(monkeypatch):

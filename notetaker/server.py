@@ -373,7 +373,7 @@ def setup_download_flex() -> dict:
 def root() -> Response:
     if setup.needs_setup():
         return RedirectResponse("/setup.html")
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
+    return RedirectResponse("/app/#/record")
 
 
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="ui")

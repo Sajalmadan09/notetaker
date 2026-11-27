@@ -44,6 +44,17 @@ export const api = {
   saveLlm: (body: unknown) => call<LLMSettings>("/api/llm/settings", { method: "PUT", json: body }),
   models: (provider: string) => call<string[]>(`/api/llm/models?provider=${provider}`),
   health: () => call<{ torch: boolean }>("/api/health"),
+  languages: () => call<string[]>("/api/languages"),
+  createJob: (wav: Blob, o: Record<string, string>) => {
+    const fd = new FormData(); fd.append("file", wav, "audio.wav");
+    for (const [k, v] of Object.entries(o)) fd.append(k, v);
+    return call<{ job_id: string }>("/api/jobs", { method: "POST", body: fd });
+  },
+  job: (id: string) => call<{ status: string; stage: string; progress: number; error?: string }>(`/api/jobs/${id}`),
+  quick: (wav: Blob, lang: string) => {
+    const fd = new FormData(); fd.append("file", wav, "chunk.wav"); fd.append("lang", lang);
+    return call<{ text: string; lang: string }>("/api/quick", { method: "POST", body: fd });
+  },
 };
 
 export const audioUrl = (id: string) => `/api/history/${id}/audio`;

@@ -242,9 +242,12 @@ def summarize(record: dict) -> dict:
         "the speaker's name as written in the transcript, or an empty string if unclear. "
         "Decisions are things the group agreed on. Chapters mark topic changes; start is the "
         "chapter's start time in seconds (timestamps in the transcript are minutes:seconds). "
-        "Use empty lists when there is nothing to report; never invent content. "
+        "Use empty lists when there is nothing to report; never invent content. Summarize what "
+        "was said; don't comment on the transcript, its quality or its language mix. "
         "Reply with only a JSON object with keys title, overview, action_items "
         "([{text, owner}]), decisions ([string]), chapters ([{title, start}]).")
+    turns = record.get("turns", [])
+    end = record.get("duration_s") or (turns[-1]["end"] if turns else 0)
     text = transcript_text(record)
     if not text.strip():
         raise LLMError("This recording has no transcript to summarize.")
@@ -255,8 +258,9 @@ def summarize(record: dict) -> dict:
         "action_items": [{"text": str(a.get("text", "")), "owner": str(a.get("owner", "")), "done": False}
                          for a in data.get("action_items", []) if isinstance(a, dict) and a.get("text")],
         "decisions": [str(d) for d in data.get("decisions", []) if d],
-        "chapters": [{"title": str(c.get("title", "")), "start": float(c.get("start", 0) or 0)}
-                     for c in data.get("chapters", []) if isinstance(c, dict) and c.get("title")],
+        "chapters": [{"title": str(c.get("title", "")), "start": start}
+                     for c in data.get("chapters", []) if isinstance(c, dict) and c.get("title")
+                     and 0 <= (start := float(c.get("start", 0) or 0)) <= end],  # small models invent times
         "provider": conf["id"], "model": conf["model"],
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
     }

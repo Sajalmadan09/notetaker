@@ -12,6 +12,7 @@ dependencies = [
     "onnxruntime>=1.24.3",
     "python-multipart>=0.0.32",
     "pywebview>=6.2.1",
+    "safetensors>=0.8.0",
     "sherpa-onnx>=2.0.3",
     "soundfile>=0.14.0",
     "uharfbuzz>=0.56.4",

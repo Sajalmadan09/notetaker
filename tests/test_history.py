@@ -31,8 +31,8 @@ def test_save_list_get_roundtrip(tmp_path):
 def test_md_and_txt_contain_turns():
     md = history.as_md(RECORD)
     txt = history.as_txt(RECORD)
-    assert "**speaker_00**" in md and "कुछ अणुओं" in md
-    assert "speaker_01" in txt and "ग्रीनलैंड" in txt
+    assert "**Speaker 1**" in md and "कुछ अणुओं" in md
+    assert "Speaker 2" in txt and "ग्रीनलैंड" in txt
 
 
 def test_pdf_is_valid_and_embeds_font():
@@ -57,7 +57,7 @@ def test_update_names_title_flow_into_exports(tmp_path):
     rec = history.update("testrec", title="Standup", names={"1": "Priya"}, base=tmp_path)
     assert rec["names"] == {"1": "Priya"}
     md = history.as_md(rec)
-    assert md.startswith("# Standup") and "**Priya**" in md and "**speaker_00**" in md
+    assert md.startswith("# Standup") and "**Priya**" in md and "**Speaker 1**" in md
     rec = history.update("testrec", names={"1": " "}, base=tmp_path)  # blank clears
     assert rec["names"] == {} and rec["title"] == "Standup"
     assert history.update("nope", title="x", base=tmp_path) is None

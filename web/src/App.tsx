@@ -3,6 +3,7 @@ import { api, type LLMSettings } from "./api";
 import { APP_KANJI, APP_NAME, Icon } from "./ui";
 import Library from "./pages/Library";
 import Meeting from "./pages/Meeting";
+import Record from "./pages/Record";
 import Settings from "./pages/Settings";
 
 // Hash routes: #/ library · #/r/<id> recording · #/settings
@@ -24,14 +25,14 @@ export default function App() {
 
   const rid = route.match(/^\/r\/([\w-]+)/)?.[1];
   const prov = llm?.provider ? llm.providers[llm.provider] : null;
-  const section = route.startsWith("/settings") ? "settings" : "library";
+  const section = route.startsWith("/settings") ? "settings" : route.startsWith("/record") ? "record" : "library";
 
   return (
     <div className="shell">
       <aside className="side tone">
         <a className="brand" href="#/"><span className="seal">{APP_KANJI}</span>{APP_NAME}</a>
         <nav className="nav">
-          <a href="/"><Icon name="mic" />Record<small>録音</small></a>
+          <a href="#/record" aria-current={section === "record" ? "page" : undefined}><Icon name="mic" />Record<small>録音</small></a>
           <a href="#/" aria-current={section === "library" ? "page" : undefined}><Icon name="book" />Library<small>記録</small></a>
           <a href="#/settings" aria-current={section === "settings" ? "page" : undefined}><Icon name="gear" />Settings<small>設定</small></a>
         </nav>
@@ -47,6 +48,7 @@ export default function App() {
       </aside>
       <main className="main">
         {section === "settings" ? <Settings onSaved={setLlm} />
+          : section === "record" ? <Record />
           : rid ? <Meeting key={rid} id={rid} llm={llm} />
           : <Library />}
       </main>

@@ -86,7 +86,7 @@ def test_languages_include_hindi():
 def test_ui_served():
     with urllib.request.urlopen(BASE + "/", timeout=10) as r:
         assert r.status == 200
-        assert "Notetaker" in r.read().decode()
+        assert "/app/" in r.url and "Kiroku" in r.read().decode()
 
 
 def test_wrong_sample_rate_rejected():

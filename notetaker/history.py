@@ -79,7 +79,7 @@ def delete(rid: str, base: Path | None = None) -> bool:
 
 
 def speaker(record: dict, spk: int) -> str:
-    return record.get("names", {}).get(str(spk)) or f"speaker_{spk:02d}"
+    return record.get("names", {}).get(str(spk)) or f"Speaker {spk + 1}"  # matches the app UI
 
 
 def _title(record: dict) -> str:

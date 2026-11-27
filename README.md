@@ -106,7 +106,7 @@ uv sync --extra bench       # add torch/transformers/etc for benchmarking
 uv run uvicorn notetaker.server:app --host 127.0.0.1 --port 8010
 ```
 
-Open http://127.0.0.1:8010 — record via mic, capture a Google Meet tab, or upload
+Open http://127.0.0.1:8010 (redirects to the Kiroku app, `/app/#/record`) — record via mic, capture a Google Meet tab, or upload
 audio; the browser converts everything to 16 kHz mono WAV client-side (WebAudio), so
 any format the browser can decode works. Pick language (25 Indic + English, or
 `auto (detect)`) and speaker count (auto or 2–6). Jobs run sequentially in one worker
@@ -138,7 +138,7 @@ Audio never leaves the machine; weights are read from the local HF cache only
 
 ## Recordings dashboard
 
-http://127.0.0.1:8010/dashboard.html (linked from the main page) — every completed
+http://127.0.0.1:8010/app/ (Library) — every completed
 recording with **playable audio**, speaker-colored transcript, and per-recording
 export in **Markdown, TXT, and PDF**. PDF uses fpdf2 + uharfbuzz with bundled
 Noto Sans Devanagari + Noto Sans (OFL) so Hindi matras/conjuncts shape correctly
@@ -158,6 +158,10 @@ Storage: `data/history/<id>.json` + `<id>.wav`. Tests isolate storage by overrid
 `history.HISTORY_DIR`.
 
 ## Kiroku app UI (`web/`) + bring-your-own AI
+
+Test setup (verified 2026-11-27): `uv run hf download kazuto098/indic-transcribe-core-int4-onnx`
+(667 MB), Ollama >= 0.40 with `ollama pull gemma3:4b` (3.4 GB). Settings → Ollama → gemma3:4b.
+Summary of a 72 s meeting: ~40 s cold, ~14 s warm on an M2 Air.
 
 React + Vite + TypeScript, built into `notetaker/static/app/` and served at `/app/`
 (build output is gitignored; `package_macos.sh` builds it). Dev: `cd web && npm i && npm run dev`

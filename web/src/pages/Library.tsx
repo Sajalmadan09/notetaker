@@ -32,7 +32,7 @@ export default function Library() {
           {rows && <div className="muted" style={{ marginTop: 6 }}>
             {rows.length} recording{rows.length === 1 ? "" : "s"} · {minutes.toFixed(0)} min captured</div>}
         </div>
-        <a className="btn primary" href="/">New recording</a>
+        <a className="btn primary" href="#/record">New recording</a>
       </div>
       <div className="tools">
         <input id="q" className="input" type="search" placeholder="Search titles and notes  ( / )"
@@ -50,7 +50,7 @@ export default function Library() {
         <div className="burst">
           <span className="ja">{rows.length ? "見つからない" : "まだ何もない"}</span>
           <p>{rows.length ? "Nothing matches that search." : "Record a meeting or a voice note. It's transcribed on this Mac and shows up here."}</p>
-          {!rows.length && <a className="btn red" href="/">Start recording</a>}
+          {!rows.length && <a className="btn red" href="#/record">Start recording</a>}
         </div>
       )}
       {shown.map(r => {
