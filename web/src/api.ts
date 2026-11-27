@@ -13,8 +13,9 @@ export type Recording = Row & {
   insert_path?: string; asr_ms?: number; raw_text?: string; cleanup_ms?: number; app?: string;
 };
 export type Provider = {
-  label: string; kind: "anthropic" | "openai"; local: boolean; needs_key: boolean;
+  label: string; kind: "anthropic" | "openai" | "cli"; local: boolean; needs_key: boolean;
   base_url: string; model: string; has_key: boolean;
+  installed?: boolean; vendor?: string; plan?: string; install?: string; login?: string;  // CLI providers
 };
 export type Connector = {
   id: string; label: string; about: string; server: string; secrets: Record<string, string>;
@@ -49,6 +50,7 @@ export const api = {
     call<{ answer: string }>(`/api/history/${id}/ask`, { method: "POST", json: { question, prior } }),
   llm: () => call<LLMSettings>("/api/llm/settings"),
   saveLlm: (body: unknown) => call<LLMSettings>("/api/llm/settings", { method: "PUT", json: body }),
+  testLlm: () => call<{ reply: string; ms: number }>("/api/llm/test", { method: "POST" }),
   models: (provider: string) => call<string[]>(`/api/llm/models?provider=${provider}`),
   tryCleanup: (text: string, app: string) =>
     call<{ text: string; raw: string; cleaned: boolean; ms: number; error: string }>("/api/dictation/cleanup", { method: "POST", json: { text, app } }),

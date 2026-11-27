@@ -454,6 +454,14 @@ def llm_save(payload: dict = Body(...)) -> dict:
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/llm/test")
+def llm_test() -> dict:
+    try:
+        return llm.test_provider()
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/llm/models")
 def llm_models(provider: str) -> list[str]:
     if provider not in llm.PROVIDERS:

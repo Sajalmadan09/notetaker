@@ -190,6 +190,20 @@ license on Hugging Face, then Settings → Speech engine → paste a Read token 
 default for every caller that doesn't pick one (dictation helper, Chrome extension, web), checked
 per request so a fresh download applies without restart; flex warms up in the background at launch.
 
+## AI through your chat subscription (no API key)
+
+Settings → AI model → "Your chat subscription": Claude Code (`claude -p`), Codex (`codex exec`),
+Gemini CLI (`gemini`), Qwen Code (`qwen`). Kiroku runs the user's installed, signed-in CLI as a
+subprocess: prompt on stdin, reply on stdout. They're agents, so each runs with tools off
+(Claude Code `--tools "" --strict-mcp-config --no-session-persistence`; Qwen `--approval-mode plan`
++ excluded shell/write/fetch tools; Codex `--sandbox read-only`) in an empty temp folder.
+CLIs are found in PATH plus ~/.local/bin, /opt/homebrew/bin, npm/bun/volta/nvm dirs (Finder-launched
+apps get a bare PATH); USER/LOGNAME are set so CLIs find their Keychain sign-in.
+Measured: Claude Code + haiku ~3–5 s per dictation cleanup, ~6 s per summary; prompt injection in a
+transcript ("run ls ~") was ignored with no tool use. Qwen Code needs `qwen` sign-in (OAuth) first.
+Codex and Gemini CLI presets are untested (not installed when written).
+Settings → Test round-trips a tiny prompt through any provider.
+
 ## Dictation cleanup (Wispr Flow-style)
 
 Hold ⌥Space → helper records → int4 ASR → `POST /api/dictation/cleanup {text, app}` → types the

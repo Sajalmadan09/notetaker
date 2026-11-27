@@ -7,6 +7,10 @@ Keychain via `keyring`, never in settings files. Non-secret settings: DATA/llm.j
 from __future__ import annotations
 
 import json
+import tempfile
+import subprocess
+import shutil
+import os
 import re
 import time
 import urllib.error
@@ -29,13 +33,29 @@ PROVIDERS = {
                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": ""},
     "custom": {"label": "Custom (OpenAI-compatible)", "kind": "openai", "local": False, "needs_key": False,
                "base_url": "", "model": ""},
+    # Chat subscriptions through their official CLIs (the user's own login; no API key).
+    "claude_code": {"label": "Claude Code", "kind": "cli", "local": False, "needs_key": False,
+                    "base_url": "", "model": "", "vendor": "Anthropic", "plan": "your Claude Pro/Max plan",
+                    "binary": "claude", "install": "https://claude.com/claude-code", "login": "claude"},
+    "codex": {"label": "Codex", "kind": "cli", "local": False, "needs_key": False,
+              "base_url": "", "model": "", "vendor": "OpenAI", "plan": "your ChatGPT plan",
+              "binary": "codex", "install": "https://developers.openai.com/codex/cli", "login": "codex login"},
+    "gemini_cli": {"label": "Gemini CLI", "kind": "cli", "local": False, "needs_key": False,
+                   "base_url": "", "model": "", "vendor": "Google", "plan": "your Google account",
+                   "binary": "gemini", "install": "https://github.com/google-gemini/gemini-cli", "login": "gemini"},
+    "qwen_code": {"label": "Qwen Code", "kind": "cli", "local": False, "needs_key": False,
+                  "base_url": "", "model": "", "vendor": "Alibaba Qwen", "plan": "your Qwen account",
+                  "binary": "qwen", "install": "https://github.com/QwenLM/qwen-code", "login": "qwen"},
 }
+CLI_MODELS = {"claude_code": ["", "haiku", "sonnet", "opus"]}  # "" = the CLI's own default
 # Server-side refusal fallback is only accepted on these Claude models.
 _FALLBACK_MODELS = {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 
 
 DICTATION_DEFAULTS = {"cleanup": False, "match_app": True, "dictionary": []}
 FAST_TIMEOUT = 12.0  # seconds; dictation falls back to the raw text after this
+CLI_FAST_TIMEOUT = 18.0  # CLIs spend seconds starting up; stays under the dictation helper's 20 s wait
+CLI_TIMEOUT = 180.0
 
 
 class LLMError(RuntimeError):
@@ -53,8 +73,9 @@ def settings() -> dict:
         mine = saved.get("providers", {}).get(pid, {})
         base = mine.get("base_url") or spec["base_url"]
         out["providers"][pid] = {**spec, "model": mine.get("model") or spec["model"], "base_url": base,
-                                 "local": spec["local"] or urlparse(base).hostname in ("127.0.0.1", "localhost", "::1"),
-                                 "has_key": _get_key(pid) is not None}
+                                 "local": spec["local"] or (bool(base) and urlparse(base).hostname in ("127.0.0.1", "localhost", "::1")),
+                                 "has_key": spec["kind"] != "cli" and _get_key(pid) is not None,
+                                 **({"installed": cli_path(spec["binary"]) is not None} if spec["kind"] == "cli" else {})}
     return out
 
 
@@ -113,6 +134,11 @@ def active() -> dict:
     if not pid:
         raise LLMError("No AI provider set up yet. Open Settings to connect one.")
     conf = {**s["providers"][pid], "id": pid}
+    if conf["kind"] == "cli":
+        if not conf["installed"]:
+            raise LLMError(f"{conf['label']} isn't installed on this Mac. Install it from {conf['install']}, "
+                           f"then run `{conf['login']}` once in Terminal to sign in.")
+        return conf
     if not conf["model"]:
         raise LLMError(f"Pick a model for {conf['label']} in Settings.")
     if conf["kind"] == "openai" and not conf["base_url"]:
@@ -128,7 +154,72 @@ def _chat(conf: dict, system: str, messages: list[dict], schema: dict | None = N
     """fast=True: interactive path (dictation) with a short timeout and no retries."""
     if conf["kind"] == "anthropic":
         return _chat_anthropic(conf, system, messages, schema, fast)
+    if conf["kind"] == "cli":
+        return _chat_cli(conf, system, messages, fast)
     return _chat_openai(conf, system, messages, schema, fast)
+
+
+# ---- chat-subscription CLIs ------------------------------------------------------------
+
+# Apps opened from Finder get a bare PATH; look where these CLIs (and node) usually live too.
+_CLI_DIRS = ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.npm-global/bin", "~/.bun/bin",
+             "~/.volta/bin", "~/.claude/local"]
+
+
+def _cli_env_path() -> str:
+    import glob
+    dirs = [os.path.expanduser(d) for d in _CLI_DIRS] + sorted(glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")))
+    return os.pathsep.join([os.environ.get("PATH", "/usr/bin:/bin"), *dirs])
+
+
+def cli_path(binary: str) -> str | None:
+    return shutil.which(binary, path=_cli_env_path())
+
+
+def _cli_command(conf: dict, system: str) -> list[str]:
+    """Each CLI is an agent that can run commands and edit files. Kiroku only wants text back,
+    so every tool is switched off (or plan-only), and it runs in an empty throwaway folder."""
+    exe, model = cli_path(conf["binary"]), conf.get("model") or ""
+    if conf["id"] == "claude_code":
+        return [exe, "-p", "--tools", "", "--strict-mcp-config", "--no-session-persistence",
+                "--output-format", "text", "--system-prompt", system, *(["--model", model] if model else [])]
+    if conf["id"] == "codex":  # untested here: codex wasn't installed when this was written
+        return [exe, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never",
+                *(["--model", model] if model else []), "-"]
+    if conf["id"] in ("qwen_code", "gemini_cli"):  # gemini_cli untested here (not installed)
+        auth = ["--auth-type", "qwen-oauth"] if conf["id"] == "qwen_code" else []  # non-interactive needs it
+        return [exe, *auth, "--approval-mode", "plan" if conf["id"] == "qwen_code" else "default",
+                "--exclude-tools", "run_shell_command", "write_file", "replace", "web_fetch", "--output-format", "text",
+                *(["--model", model] if model else []), "Follow the instructions above."]
+    raise LLMError("unknown CLI provider")
+
+
+def _chat_cli(conf: dict, system: str, messages: list[dict], fast: bool = False) -> str:
+    # The conversation (examples, prior Q&A, the request) goes on stdin as plain text.
+    convo = "\n\n".join(f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}" for m in messages)
+    body = convo + "\n\nWrite only the Assistant's reply to the last User message."
+    if conf["id"] != "claude_code":  # only Claude Code takes a separate system prompt flag
+        body = f"{system}\n\n---\n\n{body}"
+    timeout = CLI_FAST_TIMEOUT if fast else CLI_TIMEOUT
+    with tempfile.TemporaryDirectory(prefix="kiroku-cli-") as empty:
+        try:
+            import getpass
+            env = {**os.environ, "PATH": _cli_env_path(), "NO_COLOR": "1"}
+            for k in ("USER", "LOGNAME"):  # CLIs find their Keychain sign-in by user name
+                env.setdefault(k, getpass.getuser())
+            p = subprocess.run(_cli_command(conf, system), input=body, capture_output=True, text=True,
+                               timeout=timeout, cwd=empty, env=env)
+        except subprocess.TimeoutExpired:  # a CLI whose login expired often waits for a browser sign-in
+            raise LLMError(f"{conf['label']} didn't answer within {timeout:.0f} s. If its sign-in expired, "
+                           f"run `{conf['login']}` in Terminal once, then try again.")
+        except OSError as e:
+            raise LLMError(f"Couldn't start {conf['label']}: {e}")
+    if p.returncode != 0:
+        err = (p.stderr or p.stdout).strip()[-400:]
+        if re.search(r"log(ged)? ?in|auth|sign(ed)? ?in|credential|api key|unauthori", err, re.I):
+            raise LLMError(f"{conf['label']} isn't signed in. Run `{conf['login']}` once in Terminal, then try again.")
+        raise LLMError(f"{conf['label']} failed: {err or f'exit code {p.returncode}'}")
+    return p.stdout.strip()
 
 
 def _chat_anthropic(conf: dict, system: str, messages: list[dict], schema: dict | None, fast: bool = False) -> str:
@@ -192,6 +283,8 @@ def _chat_openai(conf: dict, system: str, messages: list[dict], schema: dict | N
 
 def list_models(pid: str) -> list[str]:
     conf = {**settings()["providers"][pid], "id": pid}
+    if conf["kind"] == "cli":
+        return CLI_MODELS.get(pid, [])
     if conf["kind"] == "anthropic":
         import anthropic
         if not conf["has_key"]:
@@ -206,6 +299,13 @@ def list_models(pid: str) -> list[str]:
         raise LLMError("Set a base URL first.")
     data = _http(conf, "/models", timeout=15)
     return sorted(m["id"] for m in data.get("data", []))
+
+
+def test_provider() -> dict:
+    """Round-trip a tiny prompt through the active provider (Settings → Test)."""
+    t0 = time.time()
+    reply = _chat(active(), "You are a connection test. Reply with exactly: ok", [{"role": "user", "content": "ping"}])
+    return {"reply": reply.strip()[:200], "ms": int((time.time() - t0) * 1000)}
 
 
 # ---- features -------------------------------------------------------------------------
