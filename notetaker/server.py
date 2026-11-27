@@ -144,6 +144,20 @@ def health() -> dict:
             "default_engine": engine, "default_mode": mode}
 
 
+@app.post("/api/ext/diag")
+def ext_diag(payload: dict = Body(...)) -> dict:
+    """Chrome extension recorder events (track mute/ended, levels) for debugging silent recordings."""
+    import json as _json
+    from . import paths
+    log = paths.DATA / "extension-diag.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if log.exists() and log.stat().st_size > 2_000_000:
+        log.unlink()  # keep it small
+    with log.open("a") as f:
+        f.write(time.strftime("%H:%M:%S ") + _json.dumps(payload, ensure_ascii=False)[:2000] + "\n")
+    return {"ok": True}
+
+
 @app.post("/api/app/show")
 def app_show() -> dict:
     """Menu bar → Open Kiroku. No-op when running without a native window (browser/dev)."""

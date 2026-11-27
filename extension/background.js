@@ -184,6 +184,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "grant-mic": await chrome.tabs.create({ url: chrome.runtime.getURL("mic.html") }); return sendResponse({ ok: true });
       // from the offscreen recorder
       case "preview": await setState({ preview: msg.text }); return;
+      case "levels": await setState({ levels: { mic: msg.mic, tab: msg.tab } }); return;
       case "processing": return void await setState({ phase: "processing", stage: "queued", jobId: msg.jobId });
       case "progress": return void await setState({ stage: msg.stage, progress: msg.progress });
       case "done": {

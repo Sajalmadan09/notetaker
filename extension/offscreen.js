@@ -3,6 +3,50 @@
 // On stop the whole recording goes to /api/jobs (diarization + transcript) and is polled to completion.
 const SR = 16000, PREVIEW_S = 10;
 let cfg = {}, ctx = null, streams = [], blocks = [], previewFrom = 0, total = 0, active = false;
+let mix = null, micSrc = null, micStream = null, meters = null, t0 = 0;
+
+// Diagnostics go to the local Kiroku app (DATA/extension-diag.log) so silent recordings can be explained.
+function diag(event, extra = {}) {
+  const at = t0 ? +((performance.now() - t0) / 1000).toFixed(1) : 0;
+  fetch(cfg.server + "/api/ext/diag", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ at, event, ...extra }) }).catch(() => {});
+}
+function watchTrack(kind, track) {
+  for (const ev of ["mute", "unmute", "ended"]) track.addEventListener(ev, () => diag(`${kind} track ${ev}`, { readyState: track.readyState }));
+}
+const rms = an => { const b = new Float32Array(an.fftSize); an.getFloatTimeDomainData(b);
+  let s = 0; for (const x of b) s += x * x; return Math.sqrt(s / b.length); };
+
+async function connectMic() {
+  const mic = await Promise.race([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("mic timeout")), 4000))]);
+  micStream = mic; streams.push(mic);
+  micSrc = ctx.createMediaStreamSource(mic);
+  micSrc.connect(mix); micSrc.connect(meters.mic);
+  const tr = mic.getAudioTracks()[0];
+  watchTrack("mic", tr);
+  diag("mic connected", { label: tr.label, settings: tr.getSettings() });
+}
+
+// Every second: levels to the popup; a mic that has gone digitally silent for 3 s is reconnected.
+function startMeters() {
+  let deadSince = 0, every = 0;
+  meters.timer = setInterval(async () => {
+    if (!active) return;
+    const mic = micSrc ? rms(meters.mic) : null, tab = rms(meters.tab);
+    chrome.runtime.sendMessage({ type: "levels", mic, tab }).catch(() => {});
+    if (++every % 5 === 0) diag("levels", { mic, tab });
+    if (micSrc && mic === 0) {
+      deadSince ||= performance.now();
+      if (performance.now() - deadSince > 3000) {
+        deadSince = 0;
+        diag("mic silent for 3 s, reconnecting", { readyState: micStream?.getAudioTracks()[0]?.readyState, muted: micStream?.getAudioTracks()[0]?.muted });
+        try { micSrc.disconnect(); micStream.getTracks().forEach(t => t.stop()); await connectMic(); }
+        catch (e) { diag("mic reconnect failed", { error: String(e.message || e) }); }
+      }
+    } else deadSince = 0;
+  }, 1000);
+}
 
 function wav(int16) {
   const n = int16.length, ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
@@ -76,24 +120,24 @@ async function start(msg) {
       audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: msg.streamId } },
     });
   } catch (e) { throw new Error("tab capture: " + (e.message || e.name)); }
-  streams = [tab];
+  streams = [tab]; t0 = performance.now();
   ctx = new AudioContext({ sampleRate: SR });
-  const mix = ctx.createGain();
+  mix = ctx.createGain();
+  meters = { mic: ctx.createAnalyser(), tab: ctx.createAnalyser() };
   const tabSrc = ctx.createMediaStreamSource(tab);
-  tabSrc.connect(mix);
+  tabSrc.connect(mix); tabSrc.connect(meters.tab);
+  watchTrack("tab", tab.getAudioTracks()[0]);
+  diag("recording started", { micWanted: !!msg.mic, ctxRate: ctx.sampleRate });
   // Capturing a tab silences it for the user; route it back to the speakers.
   const playback = new AudioContext();
   playback.createMediaStreamSource(tab).connect(playback.destination);
   streams.push({ getTracks: () => [], close: () => playback.close() });
   let micOn = false;
   if (msg.mic) {
-    try {  // permission is granted once from the popup ("Allow microphone"); offscreen docs cannot prompt
-      const mic = await Promise.race([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("mic timeout")), 4000))]);
-      streams.push(mic);
-      ctx.createMediaStreamSource(mic).connect(mix);
+    try {  // permission is granted once ("Allow microphone"); offscreen docs cannot prompt
+      await connectMic();
       micOn = true;
-    } catch { /* remote voices only */ }
+    } catch (e) { diag("mic unavailable", { error: String(e.message || e) }); }
   }
   await ctx.audioWorklet.addModule("pcm-worklet.js");
   const node = new AudioWorkletNode(ctx, "pcm");
@@ -105,13 +149,17 @@ async function start(msg) {
     if ((blocks.length - previewFrom) * 4000 >= PREVIEW_S * SR) preview();
   };
   mix.connect(node);
+  ctx.onstatechange = () => diag("audio context " + ctx?.state);
   blocks = []; previewFrom = 0; total = 0; active = true;
+  startMeters();
   return { ok: true, mic: micOn };
 }
 
 function stop() {
   if (!active) return;
   active = false;
+  clearInterval(meters?.timer);
+  diag("recording stopped", { seconds: +(total / SR).toFixed(1) });
   for (const s of streams) { s.getTracks().forEach(t => t.stop()); s.close?.(); }
   streams = [];
   ctx?.close(); ctx = null;
