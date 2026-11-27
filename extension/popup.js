@@ -67,7 +67,7 @@ async function init() {
 
 $("stop").onclick = async () => { await send({ type: "stop" }); await refresh(); };
 $("instant").onclick = () => { send({ type: "instant-meet" }); window.close(); };
-$("dash").onclick = () => { chrome.tabs.create({ url: cfg.server + "/dashboard.html" }); window.close(); };
+$("dash").onclick = () => { chrome.tabs.create({ url: cfg.server + "/app/" }); window.close(); };
 $("join").onclick = async () => { const r = await send({ type: "join", url: $("link").value }); if (r.ok) window.close(); else banner(r.error); };
 $("link").onkeydown = e => { if (e.key === "Enter") $("join").click(); };
 $("refresh").onclick = () => loadUpcoming(true);

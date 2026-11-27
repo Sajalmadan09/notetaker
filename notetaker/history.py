@@ -50,11 +50,15 @@ def get(rid: str, base: Path | None = None) -> dict | None:
 
 
 def update(rid: str, title: str | None = None, names: dict | None = None,
-           base: Path | None = None) -> dict | None:
-    """Set the recording title and/or speaker names ({"0": "Priya"}); blank clears."""
+           summary: dict | None = None, base: Path | None = None) -> dict | None:
+    """Set title, speaker names ({"0": "Priya"}; blank clears) and/or the AI summary."""
     record = get(rid, base)
     if record is None:
         return None
+    if summary is not None:
+        record["summary"] = summary
+        if not record.get("title") and summary.get("title"):
+            record["title"] = summary["title"][:120]
     if title is not None:
         record["title"] = title.strip()[:120]
     if names is not None:
@@ -85,6 +89,15 @@ def _title(record: dict) -> str:
 def as_md(record: dict) -> str:
     lines = [f"# {_title(record)}",
              f"language: {record.get('lang')} · duration: {record.get('duration_s')}s", ""]
+    if s := record.get("summary"):
+        lines += ["## Summary", "", s.get("overview", ""), ""]
+        if s.get("action_items"):
+            lines += ["## Action items", ""] + [
+                f"- [{'x' if a.get('done') else ' '}] {a['text']}" + (f" — {a['owner']}" if a.get("owner") else "")
+                for a in s["action_items"]] + [""]
+        if s.get("decisions"):
+            lines += ["## Decisions", ""] + [f"- {d}" for d in s["decisions"]] + [""]
+        lines += ["## Transcript", ""]
     for t in record.get("turns", []):
         lines.append(f"**{speaker(record, t['speaker'])}** [{t['start']:.1f}-{t['end']:.1f}]: {t['text']}")
         lines.append("")

@@ -122,7 +122,7 @@ chrome.alarms.create("tick", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(a => { if (a.name === "tick") checkCalendar(); });
 chrome.runtime.onStartup.addListener(() => setState({ phase: "idle" }));
 
-const openDashboard = async () => chrome.tabs.create({ url: (await settings()).server + "/dashboard.html" });
+const openDashboard = async () => chrome.tabs.create({ url: (await settings()).server + "/app/" });
 chrome.notifications.onClicked.addListener(async id => {
   if (id.startsWith("done:")) openDashboard();
   else if (id.startsWith("meet:")) { const t = await findMeetTab(id.slice(5)); if (t) chrome.tabs.update(t.id, { active: true }); }

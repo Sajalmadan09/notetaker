@@ -231,3 +231,21 @@ def test_history_patch_and_delete():
     assert status == 200 and rec["title"] == "Sync" and rec["names"] == {"0": "Asha"}
     assert call("DELETE")[0] == 200
     assert call("DELETE")[0] == 404
+
+
+def test_cross_site_writes_and_foreign_hosts_blocked():
+    req = urllib.request.Request(BASE + "/api/llm/settings", method="PUT", data=b'{"provider": ""}',
+                                 headers={"Content-Type": "application/json", "Origin": "https://evil.example"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        raise AssertionError("expected 403")
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    req = urllib.request.Request(BASE + "/api/history", headers={"Host": "evil.example"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        raise AssertionError("expected 403")
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    status, _ = get("/api/llm/settings")
+    assert status == 200

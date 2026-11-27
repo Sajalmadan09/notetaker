@@ -157,6 +157,25 @@ Export → Delete recording (click twice).
 Storage: `data/history/<id>.json` + `<id>.wav`. Tests isolate storage by overriding
 `history.HISTORY_DIR`.
 
+## Kiroku app UI (`web/`) + bring-your-own AI
+
+React + Vite + TypeScript, built into `notetaker/static/app/` and served at `/app/`
+(build output is gitignored; `package_macos.sh` builds it). Dev: `cd web && npm i && npm run dev`
+(proxies `/api` to :8010). Production build: `npm run build`.
+
+- Library (`#/`), meeting page (`#/r/<id>`: player with speaker lanes + chapter marks,
+  Summary / Transcript tabs, rename title and speakers inline, Ask panel), Settings (`#/settings`).
+- Design: manga ink-on-paper (hard panel borders, screentone, speech-bubble transcript,
+  hanko-seal accent, mincho headings with kanji captions). No gradients or glow. Light/dark.
+- AI (`notetaker/llm.py`): Claude via the official `anthropic` SDK (default `claude-opus-5-5`,
+  server-side refusal fallback on), or any OpenAI-compatible API (OpenAI, Gemini, Ollama,
+  LM Studio, OpenRouter...). Keys go to the macOS Keychain via `keyring` and are never returned
+  by the API. Only transcript text is sent, and only on Summarize/Ask; the UI says where.
+- API: `GET/PUT /api/llm/settings`, `GET /api/llm/models?provider=`,
+  `POST /api/history/{id}/summarize`, `POST /api/history/{id}/ask`.
+- Local-only guard: requests with a non-localhost `Host` (DNS rebinding) or a cross-site
+  `Origin` on writes get 403. Chrome-extension origins are allowed.
+
 ## UI system
 
 `notetaker/static/app.css` — shared zero-build design tokens + components (light/dark,

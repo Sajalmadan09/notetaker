@@ -3,6 +3,7 @@
 # and the Swift dictation helper. Weights download on first run via the wizard.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+(cd web && npm ci && npm run build)   # React UI -> notetaker/static/app (bundled below)
 uv run pyinstaller --noconfirm --windowed --name Notetaker \
   --osx-bundle-identifier com.notetaker.app \
   --add-data "NOTICE.md:." \
@@ -14,6 +15,7 @@ uv run pyinstaller --noconfirm --windowed --name Notetaker \
   --hidden-import safetensors.numpy \
   --hidden-import scipy.signal \
   --hidden-import onnxruntime \
+  --hidden-import keyring.backends.macOS \
   --collect-all webview \
   --collect-binaries sherpa_onnx \
   --collect-binaries onnxruntime \

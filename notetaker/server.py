@@ -20,7 +20,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import history, setup
+from . import history, llm, setup
 from .asr import Int4Asr, available_languages
 from .asr_torch import FLEX_REPO, TorchAsr
 from .audio import SR
@@ -28,6 +28,25 @@ from .diarize import Diarizer
 from .pipeline import transcribe_meeting
 
 app = FastAPI(title="on-desktop-notetaker")
+
+
+_LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+
+@app.middleware("http")
+async def local_only(request, call_next):
+    """Block DNS rebinding (foreign Host) and cross-site writes (foreign Origin): any web page
+    can send requests to localhost, and this API holds transcripts and LLM keys."""
+    host = request.headers.get("host", "").rsplit(":", 1)[0]
+    if host not in _LOCAL_HOSTS and host != "testserver":
+        return Response("forbidden host", status_code=403)
+    origin = request.headers.get("origin")
+    if origin and request.method not in ("GET", "HEAD", "OPTIONS"):
+        from urllib.parse import urlparse
+        o = urlparse(origin)
+        if not (o.scheme == "chrome-extension" or o.hostname in ("127.0.0.1", "localhost", "::1")):
+            return Response("forbidden origin", status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -232,14 +251,67 @@ def history_get(rid: str) -> dict:
 @app.patch("/api/history/{rid}")
 def history_patch(rid: str, payload: dict = Body(...)) -> dict:
     """{"title": str, "names": {"0": "Priya"}} — either key optional."""
+    summary = payload.get("summary")
+    if summary is not None and not isinstance(summary, dict):
+        raise HTTPException(400, "summary must be an object")
     names = payload.get("names")
     if names is not None and not (isinstance(names, dict) and all(str(k).isdigit() for k in names)):
         raise HTTPException(400, "names must map speaker numbers to names")
     title = payload.get("title")
-    record = history.update(rid, title=str(title) if title is not None else None, names=names)
+    record = history.update(rid, title=str(title) if title is not None else None, names=names,
+                            summary=summary)
     if record is None:
         raise HTTPException(404, "unknown recording")
     return record
+
+
+@app.post("/api/history/{rid}/summarize")
+def history_summarize(rid: str) -> dict:
+    record = history.get(rid)
+    if record is None:
+        raise HTTPException(404, "unknown recording")
+    try:
+        summary = llm.summarize(record)
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+    return history.update(rid, summary=summary)
+
+
+@app.post("/api/history/{rid}/ask")
+def history_ask(rid: str, payload: dict = Body(...)) -> dict:
+    record = history.get(rid)
+    if record is None:
+        raise HTTPException(404, "unknown recording")
+    question = str(payload.get("question", "")).strip()
+    if not question:
+        raise HTTPException(400, "question is required")
+    try:
+        return {"answer": llm.ask(record, question, payload.get("prior") or [])}
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/llm/settings")
+def llm_settings() -> dict:
+    return llm.settings()
+
+
+@app.put("/api/llm/settings")
+def llm_save(payload: dict = Body(...)) -> dict:
+    try:
+        return llm.save_settings(payload)
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/llm/models")
+def llm_models(provider: str) -> list[str]:
+    if provider not in llm.PROVIDERS:
+        raise HTTPException(400, "unknown provider")
+    try:
+        return llm.list_models(provider)
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.delete("/api/history/{rid}")

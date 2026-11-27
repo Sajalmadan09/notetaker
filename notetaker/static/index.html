@@ -9,7 +9,7 @@
 <body class="shell">
 <div class="shell-wrap" style="display:contents"><aside class="side">
   <span class="brand"><span class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg></span>Notetaker<span class="dot" id="dot" title="server status"></span></span>
-  <nav><a href="/" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>Record</a><a href="/dashboard.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Recordings</a></nav>
+  <nav><a href="/" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>Record</a><a href="/app/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Recordings</a></nav>
   <div class="foot" id="foot">Local · offline</div>
 </aside><div class="main">
 <main class="container">
@@ -58,7 +58,7 @@
       <div style="display:flex;gap:8px">
         <button id="copy" class="btn small" disabled>Copy</button>
         <button id="dl" class="btn small" disabled>Download .md</button>
-        <a class="btn small primary" href="/dashboard.html">Open in Recordings</a>
+        <a class="btn small primary" id="openrec" href="/app/">Open notes</a>
       </div>
     </div>
     <div id="out" class="card"></div>
@@ -159,6 +159,7 @@ async function poll(id) {
       setProgress(1, "Done");
       setTimeout(() => $("job").classList.remove("show"), 900);
       render(j.result);
+      $("openrec").href = "/app/#/r/" + id;  // job id is the recording id
       setStatus(`Saved to Recordings · ${j.result.length} turn${j.result.length === 1 ? "" : "s"}` +
         (j.detected_lang && j.lang === "auto" ? ` · detected ${j.detected_lang}` : ""));
       toast("Transcript ready — saved to Recordings");
