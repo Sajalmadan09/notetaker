@@ -10,7 +10,10 @@ import pytest
 import soundfile as sf
 import uvicorn
 
+from notetaker import setup
 from notetaker.server import app
+
+needs_weights = pytest.mark.skipif(not setup.weights_present(), reason="int4/diarization weights not downloaded")
 
 PORT = 8765
 BASE = f"http://127.0.0.1:{PORT}"
@@ -74,6 +77,7 @@ def test_health():
     assert body["status"] == "ok"
 
 
+@needs_weights
 def test_languages_include_hindi():
     _, langs = get("/api/languages")
     assert "hi" in langs
@@ -90,6 +94,7 @@ def test_wrong_sample_rate_rejected():
     assert status == 400
 
 
+@needs_weights
 def test_silence_job_completes():
     status, body = post_job(wav_bytes())
     assert status == 200
@@ -103,6 +108,7 @@ def test_silence_job_completes():
     assert isinstance(job["result"], list)
 
 
+@needs_weights
 def test_quick_chunk_transcribes():
     boundary = "----notetakerboundary"
     wav = wav_bytes()
@@ -134,6 +140,7 @@ def test_quick_rejects_long_chunks():
         assert e.code == 400
 
 
+@needs_weights
 def test_quick_auto_language_returns_known_lang():
     boundary = "----notetakerboundary"
     wav = wav_bytes()
@@ -203,3 +210,24 @@ def test_unknown_job_404():
         raise AssertionError("expected 404")
     except urllib.error.HTTPError as e:
         assert e.code == 404
+
+
+def test_history_patch_and_delete():
+    from notetaker import history
+    history.save({"id": "patchme", "ts": "2026-11-27 10:00:00", "turns": []}, None)
+
+    def call(method, body=None):
+        req = urllib.request.Request(BASE + "/api/history/patchme", method=method,
+                                     data=json.dumps(body).encode() if body else None,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    assert call("PATCH", {"names": {"x": "bad"}})[0] == 400
+    status, rec = call("PATCH", {"title": "Sync", "names": {"0": "Asha"}})
+    assert status == 200 and rec["title"] == "Sync" and rec["names"] == {"0": "Asha"}
+    assert call("DELETE")[0] == 200
+    assert call("DELETE")[0] == 404

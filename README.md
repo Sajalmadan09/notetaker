@@ -150,6 +150,10 @@ the dashboard with a 🎙 badge and verdict, playable audio, and the same export
 
 API: `GET /api/history`, `POST /api/history` (helper ingest), `GET /api/history/{id}`,
 `GET /api/history/{id}/audio`, `GET /api/history/{id}/export?fmt=md|txt|pdf`.
+`PATCH /api/history/{id}` (`{"title": ..., "names": {"0": "Priya"}}`) and
+`DELETE /api/history/{id}`. In the dashboard: click the title to rename, name speakers in
+the Details tab (names flow into the transcript, timeline, copy, and all exports), and
+Export → Delete recording (click twice).
 Storage: `data/history/<id>.json` + `<id>.wav`. Tests isolate storage by overriding
 `history.HISTORY_DIR`.
 

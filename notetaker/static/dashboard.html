@@ -36,6 +36,7 @@
 const $ = id => document.getElementById(id);
 const COLORS = ["#d2542a","#3a6ea5","#3f8a5a","#8a5a9e","#b58a1f","#3f8a8a","#b04a6e","#5a5a9e"];
 const col = s => COLORS[s % COLORS.length];
+const nm = (rec, s) => rec.names?.[s] || `Speaker ${s}`;
 let rows = [], full = {}, src = "all", sel = null, tab = "transcript";
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hl = (text, q) => { const e = esc(text); return q ? e.replace(new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"), "<mark>$1</mark>") : e; };
@@ -62,7 +63,7 @@ async function load() {
 function renderList() {
   const q = $("q").value.trim().toLowerCase();
   const shown = rows.filter(r => (src === "all" || (r.source || "meeting") === src) &&
-    (!q || (r.preview || "").toLowerCase().includes(q) || (full[r.id]?.turns || []).some(t => t.text.toLowerCase().includes(q))));
+    (!q || (r.title || "").toLowerCase().includes(q) || (r.preview || "").toLowerCase().includes(q) || (full[r.id]?.turns || []).some(t => t.text.toLowerCase().includes(q))));
   if (!shown.length) {
     $("items").innerHTML = `<div class="empty"><p>${rows.length ? "Nothing matches your filter." : "No recordings yet. Record or dictate — sessions appear here."}</p></div>`;
     return;
@@ -73,7 +74,7 @@ function renderList() {
     if (g !== last) { html += `<div class="group">${g}</div>`; last = g; }
     const dict = r.source === "dictation";
     html += `<button class="item" data-id="${r.id}" aria-current="${r.id === sel}">
-      <div class="t">${dict ? "Dictation" : "Meeting"} <span>${esc(r.ts.slice(11, 16))} · ${fmtDur(r.duration_s || 0)}</span></div>
+      <div class="t">${r.title ? esc(r.title) : dict ? "Dictation" : "Meeting"} <span>${esc(r.ts.slice(11, 16))} · ${fmtDur(r.duration_s || 0)}</span></div>
       <div class="p">${r.preview ? hl(r.preview, q) : "No speech detected"}</div></button>`;
   }
   $("items").innerHTML = html;
@@ -93,13 +94,13 @@ async function showDetail() {
   const dict = r.source === "dictation";
   const q = $("q").value.trim();
   const tl = spk.length > 1 || !dict ? `<div class="tlwrap"><div class="tl">${spk.map(s => `
-      <div class="tlrow"><span class="nm"><i style="background:${col(s)}"></i>Speaker ${s}</span>
+      <div class="tlrow"><span class="nm"><i style="background:${col(s)}"></i>${esc(nm(rec, s))}</span>
       <div class="track" data-seek>${turns.filter(t => t.speaker === s).map(t => `<i style="left:${100 * t.start / dur}%;width:${Math.max(.6, 100 * (t.end - t.start) / dur)}%;background:${col(s)}"></i>`).join("")}</div>
       <span class="pc">${Math.round(100 * talk(s) / total)}% · ${fmtDur(talk(s))}</span></div>`).join("")}
     </div><div class="phs"><b class="ph" id="ph"></b></div></div>` : "";
   box.innerHTML = `
     <div class="dhead"><div>
-      <h2>${dict ? "Dictation" : "Meeting"} · ${esc(rec.ts.slice(11, 16))}</h2>
+      <h2 id="title" contenteditable="plaintext-only" spellcheck="false" title="Click to rename">${esc(rec.title || `${dict ? "Dictation" : "Meeting"} · ${rec.ts.slice(11, 16)}`)}</h2>
       <div class="meta"><span>${esc(rec.ts.slice(0, 10))}</span><span class="badge">${esc(rec.lang)}</span>
         ${rec.mode && rec.mode !== "native" ? `<span class="badge acc">${esc(rec.mode)} script</span>` : ""}
         ${rec.verdict ? `<span class="badge ${rec.verdict === "verified_before_after" ? "ok" : "warn"}">${esc(rec.verdict.replace(/_/g, " "))}</span>` : ""}
@@ -108,7 +109,8 @@ async function showDetail() {
         <a href="/api/history/${rec.id}/export?fmt=md" download>Markdown</a>
         <a href="/api/history/${rec.id}/export?fmt=txt" download>Plain text</a>
         <a href="/api/history/${rec.id}/export?fmt=pdf" download>PDF</a>
-        <button id="copy">Copy transcript</button></div></details></div>
+        <button id="copy">Copy transcript</button>
+        <button id="del" style="color:var(--err)">Delete recording</button></div></details></div>
     ${rec.audio ? `<div class="card player"><audio id="aud" controls preload="metadata" src="/api/history/${rec.id}/audio"></audio>${tl}</div>` : ""}
     <div class="dtabs">
       <button class="tab" data-tab="transcript" aria-selected="${tab === "transcript"}">Transcript</button>
@@ -130,28 +132,47 @@ async function showDetail() {
     $("pane").onclick = e => { const t = e.target.closest(".turn.seek"); if (t) seek(turns[+t.dataset.i].start); };
   }
   $("copy").onclick = async () => {
-    await navigator.clipboard.writeText(turns.map(t => `speaker_${String(t.speaker).padStart(2, "0")} [${t.start.toFixed(1)}-${t.end.toFixed(1)}]: ${t.text}`).join("\n"));
+    await navigator.clipboard.writeText(turns.map(t => `${nm(rec, t.speaker)} [${t.start.toFixed(1)}-${t.end.toFixed(1)}]: ${t.text}`).join("\n"));
     toast("Transcript copied"); box.querySelector(".menu").open = false;
   };
+  $("del").onclick = async e => {
+    if (e.target.dataset.armed !== "1") { e.target.dataset.armed = "1"; e.target.textContent = "Click again to delete"; return; }
+    const r2 = await fetch("/api/history/" + rec.id, { method: "DELETE" });
+    if (!r2.ok) { toast("Delete failed"); return; }
+    delete full[rec.id]; sel = null; toast("Recording deleted"); load();
+  };
+  const t = $("title");
+  t.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); t.blur(); } if (e.key === "Escape") { t.textContent = rec.title || t.dataset.orig; t.blur(); } };
+  t.dataset.orig = t.textContent;
+  t.onblur = () => { const v = t.textContent.trim(); if (v !== t.dataset.orig) save(rec, { title: v }); };
   box.querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.dataset.tab; box.querySelectorAll(".tab").forEach(x => x.setAttribute("aria-selected", x === b)); renderPane(rec); });
   $("tq").oninput = () => { $("q").value = $("tq").value; renderPane(rec); renderList(); };
+}
+
+async function save(rec, patch) {
+  const r = await fetch("/api/history/" + rec.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  if (!r.ok) { toast("Save failed"); return; }
+  full[rec.id] = await r.json(); toast("Saved");
+  const row = rows.find(x => x.id === rec.id); if (row) row.title = full[rec.id].title;
+  renderList(); showDetail();
 }
 
 function renderPane(rec) {
   const turns = rec.turns || [], q = $("tq")?.value.trim() || "";
   if (tab === "details") {
-    const spk = [...new Set(turns.map(t => t.speaker))].length;
+    const spk = [...new Set(turns.map(t => t.speaker))].sort((a, b) => a - b);
     $("pane").innerHTML = `<dl class="kv">
       <dt>Recorded</dt><dd>${esc(rec.ts)}</dd><dt>Duration</dt><dd>${fmtDur(rec.duration_s || 0)}</dd>
       <dt>Language</dt><dd>${esc(rec.lang)}</dd><dt>Engine</dt><dd>${esc(rec.engine || "int4")}${rec.mode ? " · " + esc(rec.mode) : ""}</dd>
-      <dt>Speakers</dt><dd>${spk}</dd><dt>Source</dt><dd>${esc(rec.source || "meeting")}</dd>
+      <dt>Speakers</dt><dd>${spk.map(s => `<input class="input" data-spk="${s}" value="${esc(rec.names?.[s] || "")}" placeholder="Speaker ${s}" aria-label="Name for speaker ${s}" style="display:block;margin-bottom:6px;max-width:240px">`).join("") || 0}</dd><dt>Source</dt><dd>${esc(rec.source || "meeting")}</dd>
       ${rec.insert_path ? `<dt>Inserted via</dt><dd>${esc(rec.insert_path)}</dd>` : ""}${rec.asr_ms ? `<dt>ASR time</dt><dd>${rec.asr_ms} ms</dd>` : ""}
       <dt>ID</dt><dd>${esc(rec.id)}</dd></dl>`;
+    $("pane").querySelectorAll("[data-spk]").forEach(el => el.onchange = () => save(rec, { names: { [el.dataset.spk]: el.value } }));
     return;
   }
   $("pane").innerHTML = turns.map((t, i) => `
     <div class="turn seek" data-i="${i}"><div class="avatar" style="background:${col(t.speaker)}">S${t.speaker}</div>
-      <div><div class="who"><b>Speaker ${t.speaker}</b><span>${clock(t.start)}</span></div>
+      <div><div class="who"><b>${esc(nm(rec, t.speaker))}</b><span>${clock(t.start)}</span></div>
       <div class="txt">${hl(t.text, q)}</div></div></div>`).join("") || '<div class="empty"><p>No speech detected in this recording.</p></div>';
 }
 

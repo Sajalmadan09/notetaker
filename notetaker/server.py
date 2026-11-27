@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -227,6 +227,26 @@ def history_get(rid: str) -> dict:
     if record is None:
         raise HTTPException(404, "unknown recording")
     return record
+
+
+@app.patch("/api/history/{rid}")
+def history_patch(rid: str, payload: dict = Body(...)) -> dict:
+    """{"title": str, "names": {"0": "Priya"}} — either key optional."""
+    names = payload.get("names")
+    if names is not None and not (isinstance(names, dict) and all(str(k).isdigit() for k in names)):
+        raise HTTPException(400, "names must map speaker numbers to names")
+    title = payload.get("title")
+    record = history.update(rid, title=str(title) if title is not None else None, names=names)
+    if record is None:
+        raise HTTPException(404, "unknown recording")
+    return record
+
+
+@app.delete("/api/history/{rid}")
+def history_delete(rid: str) -> dict:
+    if not history.delete(rid):
+        raise HTTPException(404, "unknown recording")
+    return {"deleted": rid}
 
 
 @app.get("/api/history/{rid}/audio")

@@ -6,6 +6,7 @@ matras/conjuncts shape correctly instead of rendering as broken glyph runs.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from . import paths
@@ -30,34 +31,71 @@ def listing(base: Path | None = None) -> list[dict]:
     base = base or HISTORY_DIR
     if not base.exists():
         return []
-    keys = ("id", "ts", "lang", "engine", "duration_s", "turn_count", "preview",
+    keys = ("id", "ts", "title", "lang", "engine", "duration_s", "turn_count", "preview",
             "audio", "source", "verdict")
-    out = []
-    for path in sorted(base.glob("*.json"), reverse=True):
-        record = json.loads(path.read_text())
-        out.append({k: record.get(k) for k in keys})
-    return out
+    out = [{k: r.get(k) for k in keys}
+           for r in (json.loads(p.read_text()) for p in base.glob("*.json"))]
+    return sorted(out, key=lambda r: r["ts"] or "", reverse=True)  # ids are random; ts is chronological
+
+
+def _path(rid: str, base: Path | None, ext: str) -> Path | None:
+    if not re.fullmatch(r"[\w-]+", rid):
+        return None
+    return (base or HISTORY_DIR) / f"{rid}.{ext}"
 
 
 def get(rid: str, base: Path | None = None) -> dict | None:
-    path = (base or HISTORY_DIR) / f"{rid}.json"
-    return json.loads(path.read_text()) if path.exists() else None
+    path = _path(rid, base, "json")
+    return json.loads(path.read_text()) if path and path.exists() else None
+
+
+def update(rid: str, title: str | None = None, names: dict | None = None,
+           base: Path | None = None) -> dict | None:
+    """Set the recording title and/or speaker names ({"0": "Priya"}); blank clears."""
+    record = get(rid, base)
+    if record is None:
+        return None
+    if title is not None:
+        record["title"] = title.strip()[:120]
+    if names is not None:
+        merged = {**record.get("names", {}), **{str(int(k)): str(v).strip()[:60] for k, v in names.items()}}
+        record["names"] = {k: v for k, v in merged.items() if v}
+    _path(rid, base, "json").write_text(json.dumps(record, ensure_ascii=False, indent=2))
+    return record
+
+
+def delete(rid: str, base: Path | None = None) -> bool:
+    found = False
+    for ext in ("json", "wav"):
+        path = _path(rid, base, ext)
+        if path and path.exists():
+            path.unlink()
+            found = True
+    return found
+
+
+def speaker(record: dict, spk: int) -> str:
+    return record.get("names", {}).get(str(spk)) or f"speaker_{spk:02d}"
+
+
+def _title(record: dict) -> str:
+    return record.get("title") or f"Notetaker — {record.get('ts', '')}"
 
 
 def as_md(record: dict) -> str:
-    lines = [f"# Notetaker — {record.get('ts', '')}",
+    lines = [f"# {_title(record)}",
              f"language: {record.get('lang')} · duration: {record.get('duration_s')}s", ""]
     for t in record.get("turns", []):
-        lines.append(f"**speaker_{t['speaker']:02d}** [{t['start']:.1f}-{t['end']:.1f}]: {t['text']}")
+        lines.append(f"**{speaker(record, t['speaker'])}** [{t['start']:.1f}-{t['end']:.1f}]: {t['text']}")
         lines.append("")
     return "\n".join(lines)
 
 
 def as_txt(record: dict) -> str:
-    lines = [f"Notetaker — {record.get('ts', '')}",
+    lines = [_title(record),
              f"language: {record.get('lang')} · duration: {record.get('duration_s')}s", ""]
     for t in record.get("turns", []):
-        lines.append(f"speaker_{t['speaker']:02d} [{t['start']:.1f}-{t['end']:.1f}]")
+        lines.append(f"{speaker(record, t['speaker'])} [{t['start']:.1f}-{t['end']:.1f}]")
         lines.append(t["text"])
         lines.append("")
     return "\n".join(lines)
@@ -75,7 +113,7 @@ def as_pdf(record: dict) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
     pdf.set_font("NotoDev", size=16)
-    pdf.cell(text="Notetaker — meeting notes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(text=record.get("title") or "Notetaker — meeting notes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("NotoDev", size=10)
     pdf.set_text_color(110, 106, 102)
     pdf.cell(text=f"{record.get('ts', '')} · language {record.get('lang')} · "
@@ -85,7 +123,7 @@ def as_pdf(record: dict) -> bytes:
     for t in record.get("turns", []):
         pdf.set_font("NotoDev", size=10)
         pdf.set_text_color(180, 85, 45)
-        pdf.cell(text=f"speaker_{t['speaker']:02d}  [{t['start']:.1f}s – {t['end']:.1f}s]",
+        pdf.cell(text=f"{speaker(record, t['speaker'])}  [{t['start']:.1f}s – {t['end']:.1f}s]",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("NotoDev", size=12)
         pdf.set_text_color(20, 19, 18)
