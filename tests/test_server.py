@@ -297,3 +297,23 @@ def test_dictation_cleanup_endpoint_passthrough_and_history_keeps_raw(monkeypatc
     _, rec = get(f"/api/history/{rid}")
     assert rec["turns"][0]["text"] == "Ship it on Monday." and rec["raw_text"].startswith("um ship")
     assert rec["app"] == "Slack" and rec["cleanup_ms"] == 2100
+
+
+def test_engine_without_weights_is_refused_up_front(monkeypatch):
+    from notetaker import setup
+    monkeypatch.setattr(setup, "core_present", lambda: False)
+    monkeypatch.setattr(setup, "flex_present", lambda: False)
+    boundary = "----notetakerboundary"
+    for engine, words in (("torch", "max-accuracy"), ("flex", "code-mix")):
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+                f"filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\n").encode() + wav_bytes() + b"\r\n"
+        for key, val in [("lang", "auto"), ("engine", engine)]:
+            body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{val}\r\n").encode()
+        body += f"--{boundary}--\r\n".encode()
+        req = urllib.request.Request(BASE + "/api/jobs", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            raise AssertionError("expected 400")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400 and words in json.loads(e.read())["detail"]

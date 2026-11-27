@@ -54,7 +54,7 @@ export const api = {
   models: (provider: string) => call<string[]>(`/api/llm/models?provider=${provider}`),
   tryCleanup: (text: string, app: string) =>
     call<{ text: string; raw: string; cleaned: boolean; ms: number; error: string }>("/api/dictation/cleanup", { method: "POST", json: { text, app } }),
-  health: () => call<{ torch: boolean; flex: boolean; flex_loaded: boolean; default_engine: string; default_mode: string }>("/api/health"),
+  health: () => call<{ torch: boolean; flex: boolean; core: boolean; flex_loaded: boolean; default_engine: string; default_mode: string }>("/api/health"),
   setupStatus: () => call<{ flex_present: boolean; hf_token: boolean; download: { state: string; percent: number; detail: string } }>("/api/setup/status"),
   saveHfToken: (token: string) => call<{ user: string }>("/api/setup/hf-token", { method: "POST", json: { token } }),
   downloadFlex: () => call<{ started: boolean }>("/api/setup/download-flex", { method: "POST" }),

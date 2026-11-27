@@ -55,6 +55,15 @@ def flex_present() -> bool:
         return False
 
 
+def core_present() -> bool:
+    from .asr_torch import OFFICIAL_REPO, cached_official_dir
+    try:
+        cached_official_dir(OFFICIAL_REPO)
+        return True
+    except Exception:
+        return False
+
+
 def needs_setup() -> bool:
     return not weights_present()
 

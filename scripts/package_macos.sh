@@ -34,6 +34,11 @@ uv run --extra bench pyinstaller --noconfirm --windowed --name Kiroku \
 # the helper's responsible process is this app, so the key must live here.
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist
+VERSION=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+for key in CFBundleShortVersionString CFBundleVersion; do
+  /usr/libexec/PlistBuddy -c "Add :$key string $VERSION" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Set :$key $VERSION" dist/Kiroku.app/Contents/Info.plist
+done
 # A stable signing identity keeps macOS permissions (Accessibility, Microphone) across rebuilds;
 # ad-hoc ("-") gets a new identity every build, so TCC re-prompts each time.
 ID="${NOTETAKER_SIGN_ID:-Kiroku Local Signing}"
@@ -43,3 +48,7 @@ codesign --force --deep --sign "$ID" --identifier com.kiroku.app dist/Kiroku.app
 echo "built: dist/Kiroku.app (signed: $ID; Gatekeeper: right-click > Open first time)"
 (cd extension && rm -f ../dist/Kiroku-chrome-extension.zip && zip -qr ../dist/Kiroku-chrome-extension.zip . -x "*.DS_Store")
 echo "built: dist/Kiroku-chrome-extension.zip (Chrome > Extensions > Developer mode > Load unpacked, or drag the unzipped folder)"
+# Release zip: ditto keeps the code signature and permissions intact (plain zip can break the app).
+rm -f "dist/Kiroku-$VERSION-macOS-AppleSilicon.zip"
+ditto -c -k --keepParent dist/Kiroku.app "dist/Kiroku-$VERSION-macOS-AppleSilicon.zip"
+echo "built: dist/Kiroku-$VERSION-macOS-AppleSilicon.zip"

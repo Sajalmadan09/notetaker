@@ -14,14 +14,16 @@ Progress = Callable[[str, float], None]
 
 def transcribe_meeting(audio: np.ndarray, lang: str = "hi", num_clusters: int = -1, mode: str = "native",
                        progress: Progress | None = None,
-                       asr: Int4Asr | None = None,
-                       diarizer: Diarizer | None = None) -> dict:
+                       asr=None, diarizer: Diarizer | None = None,
+                       lid: Int4Asr | None = None) -> dict:
+    """asr: any engine with transcribe(); lid: the engine that detects language (only int4 can)."""
     asr = asr if asr is not None else Int4Asr()
+    lid = lid if lid is not None else (asr if hasattr(asr, "identify") else Int4Asr())
     diarizer = diarizer if diarizer is not None else Diarizer()
     if lang == "auto":
         mid = max(0, len(audio) // 2 - 5 * SR)
         probe = audio[mid:mid + 10 * SR]
-        lang, prob = asr.identify(probe)[0]
+        lang, prob = lid.identify(probe)[0]
         if progress:
             progress(f"language: {lang} (p={prob:.2f})", 0.0)
     if progress:

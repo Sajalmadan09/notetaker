@@ -83,7 +83,7 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, 
 
         doc = transcribe_meeting(audio, lang=lang, num_clusters=num_clusters,
                                  progress=progress, mode=mode,
-                                 asr=ENGINES[engine],
+                                 asr=ENGINES[engine], lid=ASR,
                                  diarizer=DIARIZER)
         _set(job_id, status="done", stage="done", progress=1.0,
              result=doc["turns"], detected_lang=doc["lang"])
@@ -102,6 +102,15 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, 
         _set(job_id, status="error", error=f"{type(e).__name__}: {e}")
     finally:
         path.unlink(missing_ok=True)
+
+
+def _require_weights(engine: str) -> None:
+    """Fail before upload, in words people understand, when an engine's model isn't downloaded."""
+    if engine == "flex" and not setup.flex_present():
+        raise HTTPException(400, "The code-mix engine isn't downloaded yet. Install it in Settings → Speech engine, "
+                                 "or pick the Fast engine.")
+    if engine == "torch" and not setup.core_present():
+        raise HTTPException(400, "The max-accuracy engine isn't downloaded. Pick Fast or Code-mix.")
 
 
 def _has_torch() -> bool:
@@ -131,7 +140,8 @@ def health() -> dict:
     engine, mode = default_engine()
     return {"status": "ok", "asr_loaded": ASR.loaded, "diarizer_loaded": DIARIZER.loaded,
             "torch": _has_torch(), "flex": _has_torch() and setup.flex_present(),
-            "flex_loaded": FLEX_ASR.loaded, "default_engine": engine, "default_mode": mode}
+            "flex_loaded": FLEX_ASR.loaded, "core": _has_torch() and setup.core_present(),
+            "default_engine": engine, "default_mode": mode}
 
 
 @app.get("/api/languages")
@@ -154,8 +164,8 @@ async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
         try:
             import torch  # noqa: F401
         except Exception:
-            raise HTTPException(400, "torch/flex engines unavailable here (packaged app is int4-only; "
-                                     "use a dev checkout with the bench extra)")
+            raise HTTPException(400, "This build of Kiroku doesn't include the code-mix engine. Use the Fast engine.")
+        _require_weights(engine)
     try:
         num_clusters = -1 if speakers == "auto" else int(speakers)
     except ValueError:
@@ -204,6 +214,8 @@ def quick(file: UploadFile = File(...), lang: str = Form("hi"),
     mode = mode or (default_engine()[1] if engine == default_engine()[0] else "native")
     if engine not in ENGINES or mode not in MODES:
         raise HTTPException(400, "bad engine or mode")
+    if engine != "int4":
+        _require_weights(engine)
     if lang == "auto":
         lang = ASR.identify(audio)[0][0]
     text = ENGINES[engine].transcribe(audio, lang, mode=mode) if len(audio) >= SR // 2 else ""

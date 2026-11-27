@@ -21,8 +21,8 @@ export default function Record() {
   const toast = useToast();
   const [phase, setPhase] = useState<Phase>("idle");
   const [langs, setLangs] = useState<string[]>([]);
-  const [torch, setTorch] = useState(false);
   const [flex, setFlex] = useState(false);
+  const [core, setCore] = useState(false);
   const [lang, setLang] = useState(pref("lang", "hi"));
   const [spk, setSpk] = useState(pref("speakers", "auto"));
   const [engine, setEngine] = useState(pref("engine", "int4"));
@@ -44,9 +44,10 @@ export default function Record() {
   useEffect(() => {
     api.languages().then(setLangs).catch(() => setErr("The local engine isn't ready. Finish setup or restart the app."));
     api.health().then(h => {
-      setTorch(h.torch); setFlex(h.flex);
-      if (!h.flex) setEngine("int4");
-      else if (!localStorage.getItem("kiroku.engineChosen")) { setEngine("flex"); setMode("mixed"); }  // code-mix by default
+      setFlex(h.flex); setCore(h.core);
+      setEngine(e => (e === "flex" && !h.flex) || (e === "torch" && !h.core) ? "int4" : e);  // never keep an engine that isn't downloaded
+      if (!h.flex) return;
+      if (!localStorage.getItem("kiroku.engineChosen")) { setEngine("flex"); setMode("mixed"); }  // code-mix by default
     }).catch(() => {});
     api.upcoming().then(setEvents).catch(() => setEvents(null));  // hidden unless Calendar is connected
   }, []);
@@ -199,7 +200,7 @@ export default function Record() {
               <select className="input" value={engine} onChange={e => { localStorage.setItem("kiroku.engineChosen", "1"); setEngine(e.target.value); }}>
                 <option value="int4">Fast (Indian scripts only)</option>
                 <option value="flex" disabled={!flex}>Code-mix + code-switch, best quality{flex ? "" : " (not installed)"}</option>
-                <option value="torch" disabled={!torch}>Max accuracy{torch ? "" : " (not installed)"}</option>
+                {core && <option value="torch">Max accuracy (no code-mix)</option>}
               </select>{!flex && <small>Hinglish? <a href="#/settings" style={{ color: "var(--red)" }}>Install the code-mix engine</a></small>}</label>
             {engine !== "int4" && <label className="field"><span>English words</span>
               <select className="input" value={mode} onChange={e => setMode(e.target.value)}>
