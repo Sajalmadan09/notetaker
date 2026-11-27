@@ -49,7 +49,8 @@ export default function EngineSettings() {
                 <button className="btn" onClick={saveToken} disabled={!token.startsWith("hf_")}>Save</button></div></>}</li>
             <li>{dl.state === "running" ? <div className="job" style={{ width: "100%" }}>
                 <div className="jobline"><b>Downloading</b><span className="muted mono">{dl.detail}</span></div>
-                <div className="bar"><i style={{ width: `${Math.max(dl.percent, 2)}%` }} /></div></div>
+                <div className={`bar ${dl.percent < 5 ? "busy" : ""}`}><i style={{ width: `${Math.max(dl.percent, 2)}%` }} /></div>
+                <small className="muted">About 15 minutes on a typical connection. You can close Settings; it keeps going.</small></div>
               : <button className="btn red" onClick={download} disabled={!st.hf_token}>Download code-mix engine (4.9 GB)</button>}</li>
           </ol>)}
         {(err || dl.state === "error") && <div className="notice cloud">{err || dl.detail}</div>}

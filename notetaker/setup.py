@@ -46,22 +46,29 @@ def weights_present() -> bool:
     return SEG_MODEL.exists() and EMB_MODEL.exists()
 
 
-def flex_present() -> bool:
+def _weights_ready(repo: str) -> bool:
+    """True only once model.safetensors is complete. Config files land first, and the weights
+    only appear in the snapshot when fully downloaded, so a partial download isn't 'installed'."""
     from .asr_torch import cached_official_dir
     try:
-        cached_official_dir(FLEX_REPO)
-        return True
+        return (cached_official_dir(repo) / "model.safetensors").exists()
     except Exception:
         return False
+
+
+def _repo_bytes_on_disk(repo: str) -> int:
+    from huggingface_hub.constants import HF_HUB_CACHE
+    blobs = Path(HF_HUB_CACHE) / f"models--{repo.replace('/', '--')}" / "blobs"
+    return sum(f.stat().st_size for f in blobs.glob("*") if f.is_file()) if blobs.exists() else 0
+
+
+def flex_present() -> bool:
+    return _weights_ready(FLEX_REPO)
 
 
 def core_present() -> bool:
-    from .asr_torch import OFFICIAL_REPO, cached_official_dir
-    try:
-        cached_official_dir(OFFICIAL_REPO)
-        return True
-    except Exception:
-        return False
+    from .asr_torch import OFFICIAL_REPO
+    return _weights_ready(OFFICIAL_REPO)
 
 
 def needs_setup() -> bool:
@@ -71,6 +78,9 @@ def needs_setup() -> bool:
 def status() -> dict:
     with LOCK:
         progress = dict(PROGRESS)
+    if progress["state"] == "running" and progress["detail"].startswith("code-mix"):
+        # Per-byte progress isn't exposed (and Xet writes in bursts): report what's on disk.
+        progress["detail"] = f"code-mix model: {_repo_bytes_on_disk(FLEX_REPO) / 1e9:.1f} of 4.9 GB on disk"
     return {"needs_setup": needs_setup(), "accepted": accepted(),
             "weights_present": weights_present(), "flex_present": flex_present(), "hf_token": hf_token_saved(),
             "download": progress}

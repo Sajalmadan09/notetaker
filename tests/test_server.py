@@ -317,3 +317,14 @@ def test_engine_without_weights_is_refused_up_front(monkeypatch):
             raise AssertionError("expected 400")
         except urllib.error.HTTPError as e:
             assert e.code == 400 and words in json.loads(e.read())["detail"]
+
+
+def test_partial_flex_download_is_not_installed(tmp_path, monkeypatch):
+    from notetaker import asr_torch, setup
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "config.json").write_text("{}")  # config files arrive before the weights
+    monkeypatch.setattr(asr_torch, "cached_official_dir", lambda repo=None: snap)
+    assert not setup.flex_present()
+    (snap / "model.safetensors").write_bytes(b"x")
+    assert setup.flex_present()
