@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from . import appshell, connectors, history, llm, setup
 from .asr import Int4Asr, available_languages
 from .asr_torch import FLEX_REPO, TorchAsr
-from .audio import SR
+from .audio import SR, is_silent
 from .diarize import Diarizer
 from .pipeline import transcribe_meeting
 
@@ -233,7 +233,7 @@ def quick(file: UploadFile = File(...), lang: str = Form("hi"),
         _require_weights(engine)
     if lang == "auto":
         lang = ASR.identify(audio)[0][0]
-    text = ENGINES[engine].transcribe(audio, lang, mode=mode) if len(audio) >= SR // 2 else ""
+    text = ENGINES[engine].transcribe(audio, lang, mode=mode) if len(audio) >= SR // 2 and not is_silent(audio) else ""
     return {"text": text, "lang": lang}
 
 

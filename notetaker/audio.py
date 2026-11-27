@@ -40,3 +40,10 @@ def split_long_turn(wav: np.ndarray, max_s: float = 25.0,
         start = cut
     pieces.append(wav[int(start * SR):])
     return [p for p in pieces if len(p) >= int(0.3 * SR)]
+
+
+SILENCE_RMS = 0.003  # below this a clip is silence; speech models invent text ("REDACTED") on it
+
+
+def is_silent(wav: np.ndarray) -> bool:
+    return wav.size == 0 or float(np.sqrt(np.mean(np.square(wav, dtype=np.float64)))) < SILENCE_RMS

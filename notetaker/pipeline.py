@@ -6,7 +6,7 @@ from typing import Callable
 import numpy as np
 
 from .asr import Int4Asr
-from .audio import SR, split_long_turn
+from .audio import SR, is_silent, split_long_turn
 from .diarize import Diarizer
 
 Progress = Callable[[str, float], None]
@@ -33,7 +33,7 @@ def transcribe_meeting(audio: np.ndarray, lang: str = "hi", num_clusters: int = 
     for i, (start, end, spk) in enumerate(segs):
         piece = audio[int(start * SR):int(end * SR)]
         text = " ".join(asr.transcribe(c, lang, mode=mode).strip()
-                        for c in split_long_turn(piece)).strip()
+                        for c in split_long_turn(piece) if not is_silent(c)).strip()
         turns.append({"start": round(start, 2), "end": round(end, 2),
                       "speaker": int(spk), "text": text})
         if progress:

@@ -38,3 +38,11 @@ def test_resolve_overlaps_trims_and_drops_slivers():
 def test_resolve_overlaps_keeps_disjoint():
     segs = [(0.0, 2.0, 0), (3.0, 5.0, 1)]
     assert resolve_overlaps(segs) == segs
+
+
+def test_silence_gate():
+    import numpy as np
+    from notetaker.audio import is_silent
+    assert is_silent(np.zeros(16000, np.float32))
+    assert is_silent(np.full(16000, 0.001, np.float32))
+    assert not is_silent((0.1 * np.sin(np.arange(16000) / 5)).astype(np.float32))

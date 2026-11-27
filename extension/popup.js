@@ -14,6 +14,7 @@ function render() {
   $("pill").className = "pill" + (st.phase === "recording" ? " rec" : "");
   if (st.phase === "recording") {
     $("rtitle").textContent = (st.title || "") + (st.mic === false ? " · mic off" : " · mic on");
+    banner(st.mic === false ? "Your own voice isn't being recorded, only the meeting audio. To include it: stop, open Settings → allow mic, then start again." : "");
     $("live").textContent = st.preview || "Listening… live text appears every ~10 s";
     $("live").scrollTop = 1e6;
   }
@@ -29,6 +30,11 @@ function render() {
 async function refresh() {
   ({ state: st, settings: cfg } = await send({ type: "status" }));
   render();
+  if (st.phase === "idle" && !st.message) {  // say it before recording, not after a silent meeting
+    const { micGranted } = await chrome.storage.local.get("micGranted");
+    banner(!cfg.mic ? "Your own voice won't be recorded: “Include my microphone” is off in Settings."
+      : !micGranted ? "One-time step so your own voice is recorded: open Settings below → click “allow mic” → Allow." : "");
+  }
 }
 
 async function loadUpcoming(force) {

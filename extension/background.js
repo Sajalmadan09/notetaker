@@ -42,7 +42,9 @@ async function startCapture(tabId, title, attendees) {
   try {
     const tab = await chrome.tabs.get(tabId);
     const ev = title && attendees ? null : await eventForTab(tab).catch(() => null);
-    const meetingTitle = title || ev?.summary || (/^Meet\b/.test(tab.title || "") ? "" : tab.title) || "";
+    // "Meet - abc-defg-hij" is just the meeting code, not a title worth keeping.
+    const generic = t => !t || /^Meet( - [a-z]{3}-[a-z]{4}-[a-z]{3})?$/i.test(t.trim());
+    const meetingTitle = [title, ev?.summary, tab.title].find(t => !generic(t)) || "";
     const people = attendees || ev?.attendees || [];
     // Needs the extension to have been invoked on this tab (icon click, popup, or the shortcut).
     await ensureOffscreen();  // must exist before the stream id is minted, or getUserMedia can't find it

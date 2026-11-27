@@ -19,6 +19,6 @@ class OneTurn:
 
 
 def test_auto_language_uses_lid_engine_not_transcriber():
-    doc = transcribe_meeting(np.zeros(32000, np.float32), lang="auto", mode="mixed",
+    doc = transcribe_meeting((0.1 * np.sin(np.arange(32000) / 5)).astype(np.float32), lang="auto", mode="mixed",
                              asr=NoLidAsr(), diarizer=OneTurn(), lid=Lid())
     assert doc["lang"] == "bn" and doc["turns"][0]["text"] == "bn:mixed"
