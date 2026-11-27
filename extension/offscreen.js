@@ -52,6 +52,8 @@ async function finish() {
     fd.append("speakers", "auto");
     if (cfg.engine) fd.append("engine", cfg.engine);
     if (cfg.mode) fd.append("mode", cfg.mode);
+    if (cfg.title) fd.append("title", cfg.title);  // calendar event -> recording title + Gmail recipients
+    if (cfg.attendees?.length) fd.append("attendees", cfg.attendees.join(","));
     const { job_id } = await post("/api/jobs", fd);
     chrome.runtime.sendMessage({ type: "processing", jobId: job_id });
     for (;;) {
@@ -67,7 +69,7 @@ async function finish() {
 }
 
 async function start(msg) {
-  cfg = { server: msg.server, lang: msg.lang, engine: msg.engine, mode: msg.mode };
+  cfg = { server: msg.server, lang: msg.lang, engine: msg.engine, mode: msg.mode, title: msg.title, attendees: msg.attendees };
   let tab;
   try {
     tab = await navigator.mediaDevices.getUserMedia({

@@ -3,6 +3,7 @@ import { api, type LLMSettings } from "../api";
 import { Icon, useToast } from "../ui";
 import Connectors from "./Connectors";
 import DictationSettings from "./DictationSettings";
+import EngineSettings from "./EngineSettings";
 
 const BLURB: Record<string, string> = {
   ollama: "Free, private, runs on this Mac. Needs Ollama installed.",
@@ -115,6 +116,9 @@ export default function Settings({ onSaved }: { onSaved: (s: LLMSettings) => voi
           {s.provider && <button className="btn ghost" onClick={disconnect}>Turn off AI notes</button>}
         </div>
       </div>
+
+      <h2 className="kicker">Speech engine <span className="ja">音声認識</span></h2>
+      <EngineSettings />
 
       <h2 className="kicker">Dictation <span className="ja">音声入力</span></h2>
       <DictationSettings s={s} onSaved={x => { setS(x); onSaved(x); }} />

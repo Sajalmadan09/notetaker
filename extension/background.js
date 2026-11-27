@@ -26,20 +26,34 @@ async function ensureOffscreen() {
   });
 }
 
-async function startCapture(tabId, title) {
+// The calendar event behind a Meet tab (same meet code, happening around now), if any.
+async function eventForTab(tab) {
+  const code = (tab.url?.match(MEET_CODE) || [])[1];
+  if (!code) return null;
+  const { events } = await loadEvents(false);
+  const now = Date.now();
+  return occurrences(events, now - 3 * 3600000, now + 30 * 60000)
+    .find(o => o.end > now - 15 * 60000 && o.meetUrl.toLowerCase().includes(code.toLowerCase())) || null;
+}
+
+async function startCapture(tabId, title, attendees) {
   if ((await getState()).phase === "recording") return { ok: false, error: "already recording" };
   const s = await settings();
   try {
     const tab = await chrome.tabs.get(tabId);
+    const ev = title && attendees ? null : await eventForTab(tab).catch(() => null);
+    const meetingTitle = title || ev?.summary || (/^Meet\b/.test(tab.title || "") ? "" : tab.title) || "";
+    const people = attendees || ev?.attendees || [];
     // Needs the extension to have been invoked on this tab (icon click, popup, or the shortcut).
     await ensureOffscreen();  // must exist before the stream id is minted, or getUserMedia can't find it
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
     const { micGranted } = await chrome.storage.local.get("micGranted");  // set by mic.html after the prompt
     const res = await chrome.runtime.sendMessage({
       type: "offscreen-start", streamId, server: s.server, lang: s.lang, engine: s.engine, mode: s.mode, mic: s.mic && !!micGranted,
+      title: meetingTitle, attendees: people,
     });
     if (!res?.ok) throw new Error(res?.error || "recorder unavailable");
-    await setState({ phase: "recording", tabId, title: title || tab.title || "Meeting", startedAt: Date.now(), preview: "", mic: res.mic, message: "" });
+    await setState({ phase: "recording", tabId, title: meetingTitle || tab.title || "Meeting", startedAt: Date.now(), preview: "", mic: res.mic, message: "" });
     return { ok: true, mic: res.mic };
   } catch (e) {
     const msg = String(e.message || e);
@@ -108,7 +122,7 @@ async function checkCalendar() {
     await chrome.storage.session.set({ handled });
     const tab = await findMeetTab(o.meetUrl);
     if (s.autoCapture && tab && (await getState()).phase !== "recording") {
-      const res = await startCapture(tab.id, o.summary);
+      const res = await startCapture(tab.id, o.summary, o.attendees);
       if (res.ok) { notify("Recording started", o.summary || "Meet meeting"); continue; }
     }
     notify(`Starting: ${o.summary || "Meet meeting"}`,
@@ -122,9 +136,9 @@ chrome.alarms.create("tick", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(a => { if (a.name === "tick") checkCalendar(); });
 chrome.runtime.onStartup.addListener(() => setState({ phase: "idle" }));
 
-const openDashboard = async () => chrome.tabs.create({ url: (await settings()).server + "/app/" });
+const openRecording = async id => chrome.tabs.create({ url: (await settings()).server + "/app/#/r/" + id });
 chrome.notifications.onClicked.addListener(async id => {
-  if (id.startsWith("done:")) openDashboard();
+  if (id.startsWith("done:")) openRecording(id.slice(5));  // job id is the recording id
   else if (id.startsWith("meet:")) { const t = await findMeetTab(id.slice(5)); if (t) chrome.tabs.update(t.id, { active: true }); }
 });
 chrome.notifications.onButtonClicked.addListener(id => { if (id.startsWith("meet:")) chrome.tabs.create({ url: id.slice(5) }); });
@@ -154,7 +168,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "done":
         await setState({ phase: "idle", lastJob: msg.jobId, message: "" });
         chrome.offscreen.closeDocument().catch(() => {});
-        return void notify("Transcript ready", `${msg.turns} turns. Click to open Recordings.`, "done:" + msg.jobId);
+        return void notify("Transcript ready", `${msg.turns} turns. Click to open the notes.`, "done:" + msg.jobId);
       case "error":
         await setState({ phase: "idle", message: msg.message });
         chrome.offscreen.closeDocument().catch(() => {});

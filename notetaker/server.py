@@ -104,25 +104,34 @@ def _worker(job_id: str, path: Path, lang: str, num_clusters: int, engine: str, 
         path.unlink(missing_ok=True)
 
 
+def _has_torch() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("torch") is not None
+
+
+def default_engine() -> tuple[str, str]:
+    """(engine, mode) when a caller sends none (extension, dictation helper): flex code-mix once
+    it's installed, else int4. Checked per call so a fresh flex download takes effect at once."""
+    if os.environ.get("NOTETAKER_ENGINE"):
+        return os.environ["NOTETAKER_ENGINE"], os.environ.get("NOTETAKER_MODE", "native")
+    if _has_torch() and setup.flex_present():
+        return "flex", os.environ.get("NOTETAKER_MODE", "mixed")
+    return "int4", "native"
+
+
 @app.on_event("startup")
 def warm_default_engine() -> None:
-    """Use flex (code-mix) by default when installed, and load it in the background so the
-    first dictation doesn't hit the ~60 s cold load."""
-    import importlib.util
-    if os.environ.get("NOTETAKER_ENGINE") or importlib.util.find_spec("torch") is None:
-        return
-    if not setup.flex_present():
-        return
-    os.environ["NOTETAKER_ENGINE"] = "flex"
-    os.environ.setdefault("NOTETAKER_MODE", "mixed")
-    threading.Thread(target=lambda: FLEX_ASR._load(), daemon=True).start()
+    """Load flex in the background so the first dictation doesn't hit the ~60 s cold load."""
+    if default_engine()[0] == "flex":
+        threading.Thread(target=lambda: FLEX_ASR._load(), daemon=True).start()
 
 
 @app.get("/api/health")
 def health() -> dict:
-    import importlib.util
+    engine, mode = default_engine()
     return {"status": "ok", "asr_loaded": ASR.loaded, "diarizer_loaded": DIARIZER.loaded,
-            "torch": importlib.util.find_spec("torch") is not None}
+            "torch": _has_torch(), "flex": _has_torch() and setup.flex_present(),
+            "flex_loaded": FLEX_ASR.loaded, "default_engine": engine, "default_mode": mode}
 
 
 @app.get("/api/languages")
@@ -135,8 +144,8 @@ async def create_job(file: UploadFile = File(...), lang: str = Form("hi"),
                      speakers: str = Form("auto"), engine: str = Form(""),
                      title: str = Form(""), attendees: str = Form(""),
                      mode: str = Form("")) -> dict:
-    engine = engine or os.environ.get("NOTETAKER_ENGINE", "int4")  # extension/helper send none
-    mode = mode or os.environ.get("NOTETAKER_MODE", "native")
+    engine = engine or default_engine()[0]  # extension/helper send none
+    mode = mode or (default_engine()[1] if engine == default_engine()[0] else "native")
     if engine not in ENGINES:
         raise HTTPException(400, "engine must be int4, torch or flex")
     if mode not in MODES:
@@ -191,8 +200,8 @@ def quick(file: UploadFile = File(...), lang: str = Form("hi"),
     audio = audio.mean(axis=1)
     if len(audio) > 20 * SR:
         raise HTTPException(400, "quick chunks must be <= 20 s")
-    engine = engine or os.environ.get("NOTETAKER_ENGINE", "int4")
-    mode = mode or os.environ.get("NOTETAKER_MODE", "native")
+    engine = engine or default_engine()[0]
+    mode = mode or (default_engine()[1] if engine == default_engine()[0] else "native")
     if engine not in ENGINES or mode not in MODES:
         raise HTTPException(400, "bad engine or mode")
     if lang == "auto":
@@ -502,6 +511,15 @@ def setup_accept() -> dict:
 def setup_download() -> dict:
     setup.start_download()
     return {"started": True}
+
+
+@app.post("/api/setup/hf-token")
+def setup_hf_token(payload: dict = Body(...)) -> dict:
+    """Save the user's Hugging Face token (needed for the gated code-mix model) and say who it is."""
+    try:
+        return {"user": setup.save_hf_token(str(payload.get("token", "")).strip())}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/setup/download-flex")

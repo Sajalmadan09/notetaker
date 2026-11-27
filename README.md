@@ -180,6 +180,16 @@ React + Vite + TypeScript, built into `notetaker/static/app/` and served at `/ap
 - Local-only guard: requests with a non-localhost `Host` (DNS rebinding) or a cross-site
   `Origin` on writes get 403. Chrome-extension origins are allowed.
 
+## Speech engine: code-mix (flex) in the app
+
+`scripts/package_macos.sh` now builds with `--extra bench` (torch + transformers) so the app can
+run `bodhan-ai/indic-transcribe-flex` on the Mac GPU (MPS bf16): native / mixed (English words
+kept in Latin) / romanized output, and language switching. The model is gated (4.9 GB): accept the
+license on Hugging Face, then Settings → Speech engine → paste a Read token (saved via
+`huggingface_hub.login`) → Download. Once present, `default_engine()` makes flex + mixed the
+default for every caller that doesn't pick one (dictation helper, Chrome extension, web), checked
+per request so a fresh download applies without restart; flex warms up in the background at launch.
+
 ## Dictation cleanup (Wispr Flow-style)
 
 Hold ⌥Space → helper records → int4 ASR → `POST /api/dictation/cleanup {text, app}` → types the

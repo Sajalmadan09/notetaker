@@ -22,6 +22,7 @@ export default function Record() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [langs, setLangs] = useState<string[]>([]);
   const [torch, setTorch] = useState(false);
+  const [flex, setFlex] = useState(false);
   const [lang, setLang] = useState(pref("lang", "hi"));
   const [spk, setSpk] = useState(pref("speakers", "auto"));
   const [engine, setEngine] = useState(pref("engine", "int4"));
@@ -42,7 +43,11 @@ export default function Record() {
 
   useEffect(() => {
     api.languages().then(setLangs).catch(() => setErr("The local engine isn't ready. Finish setup or restart the app."));
-    api.health().then(h => { setTorch(h.torch); if (!h.torch) setEngine("int4"); }).catch(() => {});
+    api.health().then(h => {
+      setTorch(h.torch); setFlex(h.flex);
+      if (!h.flex) setEngine("int4");
+      else if (!localStorage.getItem("kiroku.engineChosen")) { setEngine("flex"); setMode("mixed"); }  // code-mix by default
+    }).catch(() => {});
     api.upcoming().then(setEvents).catch(() => setEvents(null));  // hidden unless Calendar is connected
   }, []);
   useEffect(() => {
@@ -191,11 +196,11 @@ export default function Record() {
                 <option value="auto">Figure it out</option>{[2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} people</option>)}
               </select></label>
             <label className="field"><span>Engine</span>
-              <select className="input" value={engine} onChange={e => setEngine(e.target.value)}>
+              <select className="input" value={engine} onChange={e => { localStorage.setItem("kiroku.engineChosen", "1"); setEngine(e.target.value); }}>
                 <option value="int4">Fast (Indian scripts only)</option>
-                <option value="flex" disabled={!torch}>Code-mix, best quality{torch ? "" : " (not installed)"}</option>
+                <option value="flex" disabled={!flex}>Code-mix + code-switch, best quality{flex ? "" : " (not installed)"}</option>
                 <option value="torch" disabled={!torch}>Max accuracy{torch ? "" : " (not installed)"}</option>
-              </select></label>
+              </select>{!flex && <small>Hinglish? <a href="#/settings" style={{ color: "var(--red)" }}>Install the code-mix engine</a></small>}</label>
             {engine !== "int4" && <label className="field"><span>English words</span>
               <select className="input" value={mode} onChange={e => setMode(e.target.value)}>
                 <option value="mixed">Keep English words in English</option>

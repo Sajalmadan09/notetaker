@@ -69,3 +69,13 @@ test("cancelled and all-day events are ignored; folded lines are joined", () => 
 test("localToUtc across a DST gap does not throw", () => {
   assert.ok(Number.isFinite(localToUtc(2027, 3, 14, 2, 30, 0, "America/New_York")));
 });
+
+test("attendees: emails kept, rooms and decliners dropped", () => {
+  const e = ev(["UID:a", "SUMMARY:Sync", "DTSTART:20261127T100000Z", "DTEND:20261127T110000Z",
+    "ATTENDEE;CN=Asha;PARTSTAT=ACCEPTED:mailto:asha@x.com",
+    "ATTENDEE;CUTYPE=RESOURCE;CN=Room 4:mailto:room4@resource.calendar.google.com",
+    "ATTENDEE;PARTSTAT=DECLINED:mailto:no@x.com",
+    "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:ravi@x.com"]);
+  const [o] = occurrences(parseIcs(wrap(e)), ...win("2026-11-27T00:00:00Z", "2026-11-28T00:00:00Z"));
+  assert.deepEqual(o.attendees, ["asha@x.com", "ravi@x.com"]);
+});

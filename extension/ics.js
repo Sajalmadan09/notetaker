@@ -77,6 +77,9 @@ export function parseIcs(ics) {
       rrule: val("RRULE") ? Object.fromEntries(val("RRULE").split(";").map(p => p.split("="))) : null,
       exdates, recurrenceId: rid?.ms ?? null,
       meetUrl: (text.match(MEET_RE) || [""])[0] || "",
+      // Invitees by email; meeting rooms and people who declined aren't recipients for the notes.
+      attendees: lines.filter(l => l.startsWith("ATTENDEE") && !/CUTYPE=(RESOURCE|ROOM)|PARTSTAT=DECLINED/i.test(l))
+        .map(l => (l.match(/mailto:([^\s;]+)/i) || [])[1]).filter(Boolean),
     });
   }
   return events;
@@ -129,7 +132,7 @@ export function occurrences(events, from, to) {
     overrides.get(e.uid).add(e.recurrenceId);
   }
   const out = [];
-  const push = (e, start) => out.push({ uid: e.uid, summary: e.summary, start, end: start + (e.end - e.start), meetUrl: e.meetUrl });
+  const push = (e, start) => out.push({ uid: e.uid, summary: e.summary, start, end: start + (e.end - e.start), meetUrl: e.meetUrl, attendees: e.attendees || [] });
   for (const e of events) {
     if (!e.rrule) {
       if (e.start >= from && e.start <= to) push(e, e.start);

@@ -63,7 +63,7 @@ def status() -> dict:
     with LOCK:
         progress = dict(PROGRESS)
     return {"needs_setup": needs_setup(), "accepted": accepted(),
-            "weights_present": weights_present(), "flex_present": flex_present(),
+            "weights_present": weights_present(), "flex_present": flex_present(), "hf_token": hf_token_saved(),
             "download": progress}
 
 
@@ -119,6 +119,23 @@ def _download_flex() -> None:
     _set(state="done", percent=100, detail="ready")
 
 
+def hf_token_saved() -> bool:
+    from huggingface_hub import get_token
+    return bool(get_token())
+
+
+def save_hf_token(token: str) -> str:
+    from huggingface_hub import login, whoami
+    if not token.startswith("hf_"):
+        raise ValueError("Hugging Face tokens start with hf_. Create one at huggingface.co/settings/tokens (Read access).")
+    try:
+        name = whoami(token=token).get("name", "")
+    except Exception:
+        raise ValueError("Hugging Face didn't accept that token.")
+    login(token=token, add_to_git_credential=False)  # standard HF token file, read by downloads
+    return name
+
+
 def start_flex_download() -> None:
     with LOCK:
         if PROGRESS["state"] == "running":
@@ -129,7 +146,11 @@ def start_flex_download() -> None:
         try:
             _download_flex()
         except Exception as e:
-            _set(state="error", detail=f"{type(e).__name__}: {e} (gated model: accept its license on huggingface.co and run `hf auth login`)")
+            msg = str(e)
+            if "401" in msg or "403" in msg or "gated" in msg.lower() or "GatedRepo" in type(e).__name__:
+                msg = ("Hugging Face refused the download. Open huggingface.co/bodhan-ai/indic-transcribe-flex, "
+                       "accept the license while signed in, then try again.")
+            _set(state="error", detail=msg)
 
     threading.Thread(target=run, daemon=True).start()
 

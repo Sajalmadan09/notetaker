@@ -4,7 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 (cd web && npm ci && npm run build)   # React UI -> notetaker/static/app (bundled below)
-uv run pyinstaller --noconfirm --windowed --name Kiroku \
+# --extra bench: torch + transformers for the code-mix (flex) engine; without it the app is int4-only
+uv run --extra bench pyinstaller --noconfirm --windowed --name Kiroku \
   --osx-bundle-identifier com.kiroku.app \
   --add-data "NOTICE.md:." \
   --add-data "notetaker/static:notetaker/static" \
@@ -40,3 +41,5 @@ security find-identity -v -p codesigning | grep -q "$ID" || { echo "no '$ID' ide
 codesign --force --sign "$ID" --identifier com.kiroku.helper dist/Kiroku.app/Contents/Frameworks/NotetakerHelper
 codesign --force --deep --sign "$ID" --identifier com.kiroku.app dist/Kiroku.app
 echo "built: dist/Kiroku.app (signed: $ID; Gatekeeper: right-click > Open first time)"
+(cd extension && rm -f ../dist/Kiroku-chrome-extension.zip && zip -qr ../dist/Kiroku-chrome-extension.zip . -x "*.DS_Store")
+echo "built: dist/Kiroku-chrome-extension.zip (Chrome > Extensions > Developer mode > Load unpacked, or drag the unzipped folder)"
