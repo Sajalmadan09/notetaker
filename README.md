@@ -239,13 +239,13 @@ exist in WKWebView — Meet capture belongs to the Chrome extension.
 
 ```bash
 bash scripts/package_macos.sh     # PyInstaller .app, ad-hoc signed
-open dist/Notetaker.app           # first run: right-click > Open (Gatekeeper)
+open dist/Kiroku.app           # first run: right-click > Open (Gatekeeper)
 ```
 
 Bundles UI, fonts, diarization models, and the Swift helper. On first run the server
 redirects to `/setup.html`: license acceptance → model download with progress
 (int4 ~700 MB from the open export repo + diarization ~45 MB) → mic test → open app.
-Frozen-app data lives in `~/Library/Application Support/Notetaker`; dev checkout uses
+Frozen-app data lives in `~/Library/Application Support/Kiroku` (migrated from `Notetaker` on first launch); dev checkout uses
 `data/`. Entry point: `uv run python -m notetaker` (env `NOTETAKER_PORT`,
 `NOTETAKER_NO_HELPER`, `NOTETAKER_DATA`). See `docs/distribution-plan.md` for the
 full tech/non-tech matrix, signing caveats, and license flags (pyannote CC-BY-NC).

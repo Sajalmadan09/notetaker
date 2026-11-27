@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Notetaker for Google Meet",
+  "name": "Kiroku for Google Meet",
   "version": "0.2.0",
-  "description": "Record any tab (Google Meet) into your local Notetaker app. Calendar-aware, offline Indic transcription — nothing leaves your machine.",
+  "description": "Record any tab (Google Meet) into your local Kiroku app. Calendar-aware, offline Indic transcription — nothing leaves your machine.",
   "minimum_chrome_version": "116",
   "permissions": ["tabCapture", "activeTab", "offscreen", "storage", "notifications", "alarms", "tabs"],
   "host_permissions": [

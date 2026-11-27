@@ -45,7 +45,7 @@ async function startCapture(tabId, title) {
     const msg = String(e.message || e);
     await setState({ phase: "idle", message: msg });
     return { ok: false, error: /invoked|activeTab|Extension has not been/i.test(msg)
-      ? "Chrome only allows capture after you click the Notetaker icon on that tab (or press the shortcut)." : msg };
+      ? "Chrome only allows capture after you click the Kiroku icon on that tab (or press the shortcut)." : msg };
   }
 }
 
@@ -112,8 +112,8 @@ async function checkCalendar() {
       if (res.ok) { notify("Recording started", o.summary || "Meet meeting"); continue; }
     }
     notify(`Starting: ${o.summary || "Meet meeting"}`,
-      tab ? "Click the Notetaker icon on the Meet tab (or press the shortcut) to record."
-          : "Open the meeting, then click the Notetaker icon on its tab to record.",
+      tab ? "Click the Kiroku icon on the Meet tab (or press the shortcut) to record."
+          : "Open the meeting, then click the Kiroku icon on its tab to record.",
       "meet:" + o.meetUrl, tab ? undefined : [{ title: "Open meeting" }]);
   }
 }
@@ -158,7 +158,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "error":
         await setState({ phase: "idle", message: msg.message });
         chrome.offscreen.closeDocument().catch(() => {});
-        return void notify("Notetaker error", msg.message);
+        return void notify("Kiroku error", msg.message);
     }
   })();
   return true;

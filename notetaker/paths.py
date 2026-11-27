@@ -12,7 +12,10 @@ BUNDLE = Path(getattr(sys, "_MEIPASS", PROJECT))
 if os.environ.get("NOTETAKER_DATA"):
     DATA = Path(os.environ["NOTETAKER_DATA"])
 elif FROZEN:
-    DATA = Path.home() / "Library" / "Application Support" / "Notetaker"
+    DATA = Path.home() / "Library" / "Application Support" / "Kiroku"
+    _OLD = DATA.parent / "Notetaker"  # pre-rename builds
+    if _OLD.is_dir() and not DATA.exists():
+        _OLD.rename(DATA)
 else:
     DATA = PROJECT / "data"
 

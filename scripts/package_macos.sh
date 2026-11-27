@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 (cd web && npm ci && npm run build)   # React UI -> notetaker/static/app (bundled below)
-uv run pyinstaller --noconfirm --windowed --name Notetaker \
-  --osx-bundle-identifier com.notetaker.app \
+uv run pyinstaller --noconfirm --windowed --name Kiroku \
+  --osx-bundle-identifier com.kiroku.app \
   --add-data "NOTICE.md:." \
   --add-data "notetaker/static:notetaker/static" \
   --add-data "notetaker/assets:notetaker/assets" \
@@ -31,12 +31,12 @@ uv run pyinstaller --noconfirm --windowed --name Notetaker \
   notetaker/__main__.py
 # macOS kills mic access from a bundle whose Info.plist lacks the usage string;
 # the helper's responsible process is this app, so the key must live here.
-/usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Notetaker uses the microphone to transcribe your speech locally on this Mac.'" dist/Notetaker.app/Contents/Info.plist 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Notetaker uses the microphone to transcribe your speech locally on this Mac.'" dist/Notetaker.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist
 # A stable signing identity keeps macOS permissions (Accessibility, Microphone) across rebuilds;
 # ad-hoc ("-") gets a new identity every build, so TCC re-prompts each time.
-ID="${NOTETAKER_SIGN_ID:-Notetaker Local Signing}"
+ID="${NOTETAKER_SIGN_ID:-Kiroku Local Signing}"
 security find-identity -v -p codesigning | grep -q "$ID" || { echo "no '$ID' identity; falling back to ad-hoc"; ID="-"; }
-codesign --force --sign "$ID" --identifier com.notetaker.helper dist/Notetaker.app/Contents/Frameworks/NotetakerHelper
-codesign --force --deep --sign "$ID" --identifier com.notetaker.app dist/Notetaker.app
-echo "built: dist/Notetaker.app (signed: $ID; Gatekeeper: right-click > Open first time)"
+codesign --force --sign "$ID" --identifier com.kiroku.helper dist/Kiroku.app/Contents/Frameworks/NotetakerHelper
+codesign --force --deep --sign "$ID" --identifier com.kiroku.app dist/Kiroku.app
+echo "built: dist/Kiroku.app (signed: $ID; Gatekeeper: right-click > Open first time)"

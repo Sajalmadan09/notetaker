@@ -83,7 +83,7 @@ def speaker(record: dict, spk: int) -> str:
 
 
 def _title(record: dict) -> str:
-    return record.get("title") or f"Notetaker — {record.get('ts', '')}"
+    return record.get("title") or f"Kiroku — {record.get('ts', '')}"
 
 
 def as_md(record: dict) -> str:
@@ -126,7 +126,7 @@ def as_pdf(record: dict) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
     pdf.set_font("NotoDev", size=16)
-    pdf.cell(text=record.get("title") or "Notetaker — meeting notes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(text=record.get("title") or "Kiroku — meeting notes", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("NotoDev", size=10)
     pdf.set_text_color(110, 106, 102)
     pdf.cell(text=f"{record.get('ts', '')} · language {record.get('lang')} · "

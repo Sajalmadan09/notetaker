@@ -61,7 +61,7 @@ async function init() {
     $("start").disabled = false;
     if (!r.ok) banner(r.error); await refresh();
   };
-  fetch(cfg.server + "/api/health").catch(() => banner("Notetaker app isn't running. Open Notetaker.app first."));
+  fetch(cfg.server + "/api/health").catch(() => banner("Kiroku app isn't running. Open Kiroku.app first."));
   loadUpcoming(false);
 }
 

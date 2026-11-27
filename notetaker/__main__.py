@@ -46,7 +46,7 @@ def main() -> None:
             raise ImportError("browser mode requested")
         import webview
         webview.settings["ALLOW_DOWNLOADS"] = True  # dashboard exports (md/txt/pdf)
-        webview.create_window("Notetaker", url, width=1100, height=820, min_size=(720, 560))
+        webview.create_window("Kiroku", url, width=1100, height=820, min_size=(720, 560))
         webview.start()  # blocks until the window closes; closing the window quits the app
     except Exception:
         if not os.environ.get("NOTETAKER_BROWSER"):  # browser mode is a request, not an error
