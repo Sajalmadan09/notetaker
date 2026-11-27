@@ -16,6 +16,8 @@ const ICONS: Record<string, string> = {
   down: "M12 4v12m-5-5l5 5 5-5M5 20h14",
   trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13",
   lock: "M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11",
+  share: "M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13",
+  plug: "M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4",
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof ICONS | string; size?: number }) {

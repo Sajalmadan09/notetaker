@@ -20,7 +20,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import history, llm, setup
+from . import connectors, history, llm, setup
 from .asr import Int4Asr, available_languages
 from .asr_torch import FLEX_REPO, TorchAsr
 from .audio import SR
@@ -288,6 +288,56 @@ def history_ask(rid: str, payload: dict = Body(...)) -> dict:
     try:
         return {"answer": llm.ask(record, question, payload.get("prior") or [])}
     except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/connectors")
+def connectors_list() -> dict:
+    return {"connectors": connectors.listing(), "slack_manifest": connectors.SLACK_MANIFEST}
+
+
+@app.put("/api/connectors/{cid}")
+def connectors_save(cid: str, payload: dict = Body(...)) -> dict:
+    try:
+        return connectors.save(cid, payload.get("values"), payload.get("secrets"))
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/connectors/{cid}/test")
+def connectors_test(cid: str) -> dict:
+    if cid not in connectors.PRESETS:
+        raise HTTPException(404, "unknown connector")
+    try:
+        return {"tools": connectors.tools(cid)}
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/connectors/slack/channels")
+def slack_channels() -> list[dict]:
+    try:
+        return connectors.slack_channels()
+    except connectors.ConnectorError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/history/{rid}/share/slack")
+def slack_preview(rid: str) -> dict:
+    record = history.get(rid)
+    if record is None:
+        raise HTTPException(404, "unknown recording")
+    return {"text": connectors.notes_markdown(record)}
+
+
+@app.post("/api/history/{rid}/share/slack")
+def slack_share(rid: str, payload: dict = Body(...)) -> dict:
+    """Posts exactly the text the user reviewed in the share dialog."""
+    if history.get(rid) is None:
+        raise HTTPException(404, "unknown recording")
+    try:
+        return {"result": connectors.slack_post(str(payload.get("channel_id", "")), str(payload.get("text", "")))}
+    except connectors.ConnectorError as e:
         raise HTTPException(400, str(e))
 
 

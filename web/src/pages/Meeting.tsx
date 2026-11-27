@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, audioUrl, exportUrl, type LLMSettings, type Recording, type Summary } from "../api";
+import ShareSlack from "./ShareSlack";
 import { clock, fmtDur, highlight, Icon, parseTs, speakerColor, speakerName, useToast } from "../ui";
 
 type Msg = { role: "user" | "assistant"; content: string; error?: boolean };
@@ -13,6 +14,7 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
   const [busy, setBusy] = useState(false);
   const [sumErr, setSumErr] = useState("");
   const [armed, setArmed] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const aud = useRef<HTMLAudioElement>(null);
   const [now, setNow] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -64,6 +66,7 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
         <div className="topbar">
           <a className="btn ghost" href="#/"><Icon name="back" />Library</a>
           <span className="sp" />
+          <button className="btn" onClick={() => setSharing(true)}><Icon name="share" />Share to Slack</button>
           <details className="menu">
             <summary className="btn"><Icon name="down" />Export</summary>
             <div className="pop panel">
@@ -169,6 +172,7 @@ export default function Meeting({ id, llm }: { id: string; llm: LLMSettings | nu
           </div>
         )}
       </div>
+      {sharing && <ShareSlack rid={rec.id} onClose={() => setSharing(false)} />}
       <Ask rec={rec} llmReady={!!prov} local={!!prov?.local} label={prov?.label ?? ""} />
     </div>
   );

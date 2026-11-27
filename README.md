@@ -180,6 +180,24 @@ React + Vite + TypeScript, built into `notetaker/static/app/` and served at `/ap
 - Local-only guard: requests with a non-localhost `Host` (DNS rebinding) or a cross-site
   `Origin` on writes get 403. Chrome-extension origins are allowed.
 
+## Connectors (MCP)
+
+`notetaker/connectors.py`: the app is an MCP client (official `mcp` Python SDK, stdio). Each
+connector preset is a local MCP server started on demand with the user's secrets from the
+Keychain injected as env vars. Settings → Connectors guides setup; the meeting page has
+**Share to Slack** (pick channel, edit the previewed message, post).
+
+- Slack: `slack-mcp-server@1.3.0` (korotovsky, MIT; pinned) via `npx`, so Node.js is required.
+  The reference `@modelcontextprotocol/server-slack` is deprecated on npm. Slack's hosted
+  `mcp.slack.com` needs a confidential OAuth app (client secret), which a desktop app can't hold.
+- User creates a Slack app from the manifest the UI copies (scopes: channels:read, groups:read,
+  chat:write, chat:write.public, users:read) and pastes the `xoxb-` bot token.
+- Only `channels_list` and `conversations_add_message` are enabled
+  (`SLACK_MCP_ENABLED_TOOLS`); the app never reads Slack messages. Posting needs a user click on
+  the exact text shown.
+- API: `GET /api/connectors`, `PUT /api/connectors/{id}`, `POST /api/connectors/{id}/test`,
+  `GET /api/connectors/slack/channels`, `GET|POST /api/history/{id}/share/slack`.
+
 ## UI system
 
 `notetaker/static/app.css` — shared zero-build design tokens + components (light/dark,

@@ -16,6 +16,11 @@ export type Provider = {
   label: string; kind: "anthropic" | "openai"; local: boolean; needs_key: boolean;
   base_url: string; model: string; has_key: boolean;
 };
+export type Connector = {
+  id: string; label: string; about: string; server: string; secrets: Record<string, string>;
+  fields: Record<string, string>; values: Record<string, string>; has_secret: Record<string, boolean>;
+  configured: boolean; needs_node: boolean;
+};
 export type LLMSettings = { provider: string; summary_language: string; providers: Record<string, Provider> };
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -44,6 +49,14 @@ export const api = {
   saveLlm: (body: unknown) => call<LLMSettings>("/api/llm/settings", { method: "PUT", json: body }),
   models: (provider: string) => call<string[]>(`/api/llm/models?provider=${provider}`),
   health: () => call<{ torch: boolean }>("/api/health"),
+  connectors: () => call<{ connectors: Connector[]; slack_manifest: unknown }>("/api/connectors"),
+  saveConnector: (id: string, body: { values?: Record<string, string>; secrets?: Record<string, string> }) =>
+    call<Connector>(`/api/connectors/${id}`, { method: "PUT", json: body }),
+  testConnector: (id: string) => call<{ tools: string[] }>(`/api/connectors/${id}/test`, { method: "POST" }),
+  slackChannels: () => call<{ id: string; name: string }[]>("/api/connectors/slack/channels"),
+  slackPreview: (rid: string) => call<{ text: string }>(`/api/history/${rid}/share/slack`),
+  slackPost: (rid: string, channel_id: string, text: string) =>
+    call<{ result: string }>(`/api/history/${rid}/share/slack`, { method: "POST", json: { channel_id, text } }),
   languages: () => call<string[]>("/api/languages"),
   createJob: (wav: Blob, o: Record<string, string>) => {
     const fd = new FormData(); fd.append("file", wav, "audio.wav");

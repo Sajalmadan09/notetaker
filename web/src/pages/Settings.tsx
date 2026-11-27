@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type LLMSettings } from "../api";
 import { Icon, useToast } from "../ui";
+import Connectors from "./Connectors";
 
 const BLURB: Record<string, string> = {
   ollama: "Free, private, runs on this Mac. Needs Ollama installed.",
@@ -113,6 +114,9 @@ export default function Settings({ onSaved }: { onSaved: (s: LLMSettings) => voi
           {s.provider && <button className="btn ghost" onClick={disconnect}>Turn off AI notes</button>}
         </div>
       </div>
+
+      <h2 className="kicker">Connectors <span className="ja">連携</span></h2>
+      <Connectors />
 
       <h2 className="kicker">Privacy <span className="ja">秘密</span></h2>
       <div className="panel form" style={{ gap: 8 }}>
