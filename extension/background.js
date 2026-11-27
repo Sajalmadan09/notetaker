@@ -51,6 +51,7 @@ async function startCapture(tabId, title, attendees) {
     await ensureOffscreen();  // must exist before the stream id is minted, or getUserMedia can't find it
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
     const { micGranted } = await chrome.storage.local.get("micGranted");  // set by mic.html after the prompt
+    await setState({ micLabel: "" });  // the recorder reports the real mic name while starting
     const res = await chrome.runtime.sendMessage({
       type: "offscreen-start", streamId, server: s.server, lang: s.lang, engine: s.engine, mode: s.mode, mic: s.mic && !!micGranted,
       title: meetingTitle, attendees: people,
@@ -185,6 +186,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // from the offscreen recorder
       case "preview": await setState({ preview: msg.text }); return;
       case "levels": await setState({ levels: { mic: msg.mic, tab: msg.tab } }); return;
+      case "mic-label": await setState({ micLabel: msg.label }); return;
       case "processing": return void await setState({ phase: "processing", stage: "queued", jobId: msg.jobId });
       case "progress": return void await setState({ stage: msg.stage, progress: msg.progress });
       case "done": {

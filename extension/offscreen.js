@@ -17,8 +17,19 @@ function watchTrack(kind, track) {
 const rms = an => { const b = new Float32Array(an.fftSize); an.getFloatTimeDomainData(b);
   let s = 0; for (const x of b) s += x * x; return Math.sqrt(s / b.length); };
 
+// Pin the Mac's built-in mic. "Default" follows macOS, which switches to a nearby iPhone
+// (Continuity) whose mic then drops out mid-meeting. Phones/virtual devices only as a last resort.
+async function pickMic() {
+  const mics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput" && d.deviceId);
+  const bad = /iphone|ipad|continuity|virtual|teams|zoom|blackhole|loopback/i;
+  return mics.find(d => /built-in|macbook/i.test(d.label) && d.deviceId !== "default")
+    || mics.find(d => d.deviceId !== "default" && d.deviceId !== "communications" && !bad.test(d.label)) || null;
+}
+
 async function connectMic() {
-  const mic = await Promise.race([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } }),
+  const dev = await pickMic();
+  const audio = { echoCancellation: true, ...(dev ? { deviceId: { exact: dev.deviceId } } : {}) };
+  const mic = await Promise.race([navigator.mediaDevices.getUserMedia({ audio }),
     new Promise((_, rej) => setTimeout(() => rej(new Error("mic timeout")), 4000))]);
   micStream = mic; streams.push(mic);
   micSrc = ctx.createMediaStreamSource(mic);
@@ -26,6 +37,7 @@ async function connectMic() {
   const tr = mic.getAudioTracks()[0];
   watchTrack("mic", tr);
   diag("mic connected", { label: tr.label, settings: tr.getSettings() });
+  chrome.runtime.sendMessage({ type: "mic-label", label: tr.label }).catch(() => {});
 }
 
 // Every second: levels to the popup; a mic that has gone digitally silent for 3 s is reconnected.

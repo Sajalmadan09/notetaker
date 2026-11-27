@@ -21,7 +21,7 @@ function render() {
   $("pill").textContent = st.phase === "recording" ? "● REC" : st.phase === "processing" ? "processing" : "idle";
   $("pill").className = "pill" + (st.phase === "recording" ? " rec" : "");
   if (st.phase === "recording") {
-    $("rtitle").textContent = (st.title || "") + (st.mic === false ? " · mic off" : " · mic on");
+    $("rtitle").textContent = (st.title || "") + (st.mic === false ? " · mic off" : ` · mic: ${st.micLabel || "on"}`);
     banner(st.mic === false ? "Your own voice isn't being recorded, only the meeting audio. To include it: stop, open Settings → allow mic, then start again." : "");
     const bar = v => v == null ? "off" : "▮".repeat(Math.min(8, Math.round(Math.sqrt(v) * 30))) || "·";
     $("levels").textContent = st.levels ? `your mic ${bar(st.levels.mic)}   meeting ${bar(st.levels.tab)}` : "";
