@@ -1,7 +1,9 @@
-# Notetaker — attributions and third-party licenses
+# Kiroku — attributions and third-party licenses
 
-Notetaker application code © 2026 Sajal Madan. Third-party components below keep
-their own licenses; this file must accompany any redistribution of the app or bundle.
+Kiroku application code © 2026 Sajal Madan, released under the MIT License (see LICENSE).
+The MIT License covers this repository's code only. Third-party components below keep
+their own licenses (some models are non-commercial or share-alike); this file must
+accompany any redistribution of the app or bundle.
 
 ## Models (downloaded on first run or bundled)
 
