@@ -82,7 +82,17 @@ def main() -> None:
     helper = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "NotetakerHelper"
     proc = None
     if helper.exists() and not os.environ.get("NOTETAKER_NO_HELPER"):
-        proc = subprocess.Popen([str(helper)])
+        proc = subprocess.Popen([str(helper)], stdin=subprocess.PIPE, text=True)
+        from notetaker import appshell
+
+        def send(line: str) -> bool:  # meeting-start / meeting-stop for the native recorder
+            try:
+                proc.stdin.write(line + "\n")
+                proc.stdin.flush()
+                return proc.poll() is None
+            except (OSError, ValueError):
+                return False
+        appshell.helper_send = send
     try:
         if os.environ.get("NOTETAKER_BROWSER"):
             raise ImportError("browser mode requested")

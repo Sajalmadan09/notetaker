@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kiroku for Google Meet",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Record any tab (Google Meet) into your local Kiroku app. Calendar-aware, offline Indic transcription — nothing leaves your machine.",
   "minimum_chrome_version": "116",
   "permissions": ["tabCapture", "activeTab", "offscreen", "storage", "notifications", "alarms", "tabs"],
@@ -13,6 +13,7 @@
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" } },
   "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "content_scripts": [{ "matches": ["https://meet.google.com/*"], "js": ["meet.js"], "run_at": "document_idle" }],
   "commands": {
     "toggle-capture": {
       "suggested_key": { "default": "Alt+Shift+R", "mac": "Alt+Shift+R" },

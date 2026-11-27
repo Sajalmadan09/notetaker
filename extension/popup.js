@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const send = m => chrome.runtime.sendMessage(m);
 const clock = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const hhmm = ms => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-let st = { phase: "idle" }, cfg = {}, timer = null;
+let st = { phase: "idle" }, cfg = {}, timer = null, appPoll = null;
 
 // Ask Chrome for the extension's real mic permission (a saved flag goes stale if the extension
 // is reinstalled); keep the flag the recorder reads in sync.
@@ -21,10 +21,17 @@ function render() {
   $("pill").textContent = st.phase === "recording" ? "● REC" : st.phase === "processing" ? "processing" : "idle";
   $("pill").className = "pill" + (st.phase === "recording" ? " rec" : "");
   if (st.phase === "recording") {
-    $("rtitle").textContent = (st.title || "") + (st.mic === false ? " · mic off" : ` · mic: ${st.micLabel || "on"}`);
+    $("rtitle").textContent = (st.title || "") + (st.via === "app" ? " · recorded by the Kiroku app" : "")
+      + (st.mic === false ? " · mic off" : ` · mic: ${st.micLabel || "on"}`);
     banner(st.mic === false ? "Your own voice isn't being recorded, only the meeting audio. To include it: stop, open Settings → allow mic, then start again." : "");
     const bar = v => v == null ? "off" : "▮".repeat(Math.min(8, Math.round(Math.sqrt(v) * 30))) || "·";
     $("levels").textContent = st.levels ? `your mic ${bar(st.levels.mic)}   meeting ${bar(st.levels.tab)}` : "";
+    if (st.via === "app" && !appPoll) appPoll = setInterval(async () => {  // levels come from the app
+      const m = await fetch(`${cfg.server}/api/meeting/${st.meetingId}`).then(r => r.json()).catch(() => null);
+      if (m?.levels) $("levels").textContent = `your mic ${bar(m.levels.mic)}   meeting ${bar(m.levels.others)}`;
+      if (m?.warnings?.length) banner(m.warnings.join(" · ") + (m.warnings.some(w => /meeting audio/.test(w))
+        ? " (System Settings → Privacy & Security → Screen & System Audio Recording → allow Kiroku)" : ""));
+    }, 2000);
     $("live").textContent = st.preview || "Listening… live text appears every ~10 s";
     $("live").scrollTop = 1e6;
   }
@@ -67,7 +74,7 @@ async function loadUpcoming(force) {
 async function init() {
   await refresh();
   $("server").value = cfg.server; $("lang").value = cfg.lang; $("mode").value = cfg.mode || "";
-  $("mic").checked = cfg.mic; $("auto").checked = cfg.autoCapture; $("suggest").checked = cfg.suggest; $("ics").value = cfg.icsUrl;
+  $("mic").checked = cfg.mic; $("auto").checked = cfg.autoCapture; $("suggest").checked = cfg.suggest; $("autorec").checked = cfg.autoRecord; $("ics").value = cfg.icsUrl;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   $("atitle").textContent = tab ? (tab.title || tab.url || "").slice(0, 60) : "";
   $("start").onclick = async () => {
@@ -94,7 +101,7 @@ $("refresh").onclick = () => loadUpcoming(true);
 $("grant").onclick = e => { e.preventDefault(); send({ type: "grant-mic" }); };
 $("save").onclick = async () => {
   const settings = { server: $("server").value.trim().replace(/\/$/, ""), lang: $("lang").value, mode: $("mode").value,
-    mic: $("mic").checked, autoCapture: $("auto").checked, icsUrl: $("ics").value.trim(), suggest: $("suggest").checked };
+    mic: $("mic").checked, autoCapture: $("auto").checked, icsUrl: $("ics").value.trim(), suggest: $("suggest").checked, autoRecord: $("autorec").checked };
   await send({ type: "save-settings", settings });
   $("saved").textContent = "Saved"; setTimeout(() => $("saved").textContent = "", 1500);
   await refresh(); loadUpcoming(true);

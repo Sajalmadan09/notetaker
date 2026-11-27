@@ -1,7 +1,8 @@
 // Service worker: capture lifecycle, calendar (secret iCal URL) watcher, notifications, shortcut.
 import { parseIcs, occurrences } from "./ics.js";
 
-const DEFAULTS = { server: "http://127.0.0.1:8010", lang: "hi", icsUrl: "", autoCapture: false, mic: true, engine: "", mode: "", suggest: true };
+const DEFAULTS = { server: "http://127.0.0.1:8010", lang: "hi", icsUrl: "", autoCapture: false, mic: true, engine: "", mode: "", suggest: true,
+  autoRecord: true, countdown: 5 };
 const MEET_ROOM = /^https:\/\/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i;
 const MEET_CODE = /meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})/i;
 const ICON = "icon128.png";
@@ -68,9 +69,76 @@ async function startCapture(tabId, title, attendees) {
   }
 }
 
+// ---- recording through the Kiroku app (browser audio + built-in mic, no tab capture) --------
+
+const api = async (path, body) => {
+  const s = await settings();
+  const r = await fetch(s.server + path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `Kiroku app error ${r.status}`);
+  return data;
+};
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const hint = (tabId, text) => chrome.tabs.sendMessage(tabId, { type: "meet-hint", text }).catch(() => {});
+
+async function startNative(tab) {
+  if ((await getState()).phase !== "idle") return { ok: false, error: "already recording" };
+  const s = await settings();
+  const ev = await eventForTab(tab).catch(() => null);
+  const generic = t => !t || /^Meet( - [a-z]{3}-[a-z]{4}-[a-z]{3})?$/i.test(t.trim());
+  const title = [ev?.summary, tab.title].find(t => !generic(t)) || "";
+  try {
+    const { id } = await api("/api/meeting/start", { title, attendees: ev?.attendees || [], lang: s.lang });
+    let m = {};
+    for (let i = 0; i < 16 && !["recording", "error"].includes(m.status); i++) {  // helper confirms in ~1 s
+      await new Promise(r => setTimeout(r, 500));
+      m = await api(`/api/meeting/${id}`);
+    }
+    if (m.status !== "recording") throw new Error(m.error || "the Kiroku app didn't start recording");
+    chrome.action.setBadgeText({ tabId: tab.id, text: "REC" });
+    await setState({ phase: "recording", via: "app", meetingId: id, tabId: tab.id, title: title || "Meeting",
+      startedAt: Date.now(), preview: "", mic: !!m.mic, micLabel: m.mic || "", message: "" });
+    if (m.warnings?.length) hint(tab.id, "Recording your voice, but not the other people: " + esc(m.warnings[0]) +
+      ". Open System Settings → Privacy & Security → Screen &amp; System Audio Recording and allow Kiroku.");
+    return { ok: true };
+  } catch (e) {
+    const msg = String(e.message || e);
+    hint(tab.id, `Kiroku couldn't start recording by itself (${esc(msg)}). Press <b>⌥⇧R</b> to record this tab instead.`);
+    notify("Press ⌥⇧R to record", msg, "suggest:" + tab.id);
+    return { ok: false, error: msg };
+  }
+}
+
+async function stopNative() {
+  const st = await getState();
+  await api(`/api/meeting/${st.meetingId}/stop`, {}).catch(() => {});
+  if (st.tabId) chrome.action.setBadgeText({ tabId: st.tabId, text: "…" }).catch(() => {});
+  await setState({ phase: "processing", stage: "uploading", progress: 0 });
+  chrome.alarms.create("native", { periodInMinutes: 0.5 });  // the worker may sleep; check back
+  setTimeout(pollNative, 4000);
+  return { ok: true };
+}
+
+async function pollNative() {
+  const st = await getState();
+  if (st.via !== "app" || st.phase !== "processing") return chrome.alarms.clear("native");
+  let m;
+  try { m = await api(`/api/meeting/${st.meetingId}`); } catch { return; }
+  if (m.status === "done" || m.status === "error") {
+    chrome.alarms.clear("native");
+    if (st.tabId) chrome.action.setBadgeText({ tabId: st.tabId, text: "" }).catch(() => {});
+    await setState({ phase: "idle", via: "", lastJob: m.status === "done" ? st.meetingId : st.lastJob,
+      message: m.status === "error" ? m.error : "" });
+    if (m.status === "done") notify("Transcript ready", `${m.turns} turns. Click to open the notes.`, "done:" + st.meetingId);
+    else notify("Kiroku error", m.error || "transcription failed");
+  } else await setState({ stage: m.stage || "transcribing", progress: m.progress || 0 });
+}
+
 async function stopCapture() {
   const cur = await getState();
   if (cur.phase !== "recording") return { ok: false, error: "not recording" };
+  if (cur.via === "app") return stopNative();
   if (cur.tabId) chrome.action.setBadgeText({ tabId: cur.tabId, text: "…" });
   await setState({ phase: "processing", stage: "uploading", progress: 0 });
   await chrome.runtime.sendMessage({ type: "offscreen-stop" });
@@ -143,7 +211,8 @@ async function checkCalendar() {
 // after a click on the extension (or its shortcut) on that tab, so this can't start recording itself.
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   const code = info.status === "complete" && (tab.url?.match(MEET_ROOM) || [])[1];
-  if (!code || !(await settings()).suggest || (await getState()).phase !== "idle") return;
+  const cfg = await settings();
+  if (!code || !cfg.suggest || cfg.autoRecord || (await getState()).phase !== "idle") return;
   const { suggested = {} } = await chrome.storage.session.get("suggested");
   if (suggested[code]) return;
   suggested[code] = true;
@@ -154,7 +223,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 });
 
 chrome.alarms.create("tick", { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener(a => { if (a.name === "tick") checkCalendar(); });
+chrome.alarms.onAlarm.addListener(a => { if (a.name === "tick") checkCalendar(); if (a.name === "native") pollNative(); });
+
+// Closing the meeting tab ends the recording too.
+chrome.tabs.onRemoved.addListener(async tabId => {
+  const st = await getState();
+  if (st.phase === "recording" && st.tabId === tabId) stopCapture();
+});
 chrome.runtime.onStartup.addListener(() => setState({ phase: "idle" }));
 
 const openRecording = async id => chrome.tabs.create({ url: (await settings()).server + "/app/#/r/" + id });
@@ -171,6 +246,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg.type) {
       case "status": return sendResponse({ state: await getState(), settings: await settings() });
+      // from the Meet page (meet.js)
+      case "meet-joined": {
+        const s = await settings();
+        const idle = (await getState()).phase === "idle";
+        return sendResponse(idle && s.autoRecord ? { countdown: Math.max(1, +s.countdown || 5) } : {});
+      }
+      case "auto-start": return sendResponse(_sender.tab ? await startNative(_sender.tab) : { ok: false });
+      case "auto-cancel": return sendResponse({ ok: true });
+      case "meet-ended": {
+        const st = await getState();
+        if (st.phase === "recording" && _sender.tab && st.tabId === _sender.tab.id) await stopCapture();
+        return sendResponse({ ok: true });
+      }
       case "start": return sendResponse(await startCapture(msg.tabId, msg.title));
       case "stop": return sendResponse(await stopCapture());
       case "save-settings": await chrome.storage.local.set(msg.settings); return sendResponse({ ok: true });

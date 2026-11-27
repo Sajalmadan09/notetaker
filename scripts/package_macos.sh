@@ -34,6 +34,9 @@ uv run --extra bench pyinstaller --noconfirm --windowed --name Kiroku \
 # the helper's responsible process is this app, so the key must live here.
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Kiroku uses the microphone to transcribe your speech locally on this Mac.'" dist/Kiroku.app/Contents/Info.plist
+# Recording the browser's meeting audio (Core Audio process tap) needs this, or macOS won't ask.
+/usr/libexec/PlistBuddy -c "Add :NSAudioCaptureUsageDescription string 'Kiroku records the meeting audio playing in your browser so it can transcribe the other participants on this Mac.'" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :NSAudioCaptureUsageDescription 'Kiroku records the meeting audio playing in your browser so it can transcribe the other participants on this Mac.'" dist/Kiroku.app/Contents/Info.plist
 VERSION=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
 for key in CFBundleShortVersionString CFBundleVersion; do
   /usr/libexec/PlistBuddy -c "Add :$key string $VERSION" dist/Kiroku.app/Contents/Info.plist 2>/dev/null \

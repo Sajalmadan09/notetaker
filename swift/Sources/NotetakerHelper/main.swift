@@ -662,4 +662,5 @@ if startParent > 1 {
     }
 }
 // NSApplication's run loop integrates the Carbon event dispatcher.
+listenForCommands()  // meeting-start / meeting-stop from the Kiroku app
 nsApp.run()

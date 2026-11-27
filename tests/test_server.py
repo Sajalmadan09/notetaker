@@ -328,3 +328,45 @@ def test_partial_flex_download_is_not_installed(tmp_path, monkeypatch):
     assert not setup.flex_present()
     (snap / "model.safetensors").write_bytes(b"x")
     assert setup.flex_present()
+
+
+def _post_json(path, body):
+    req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def test_native_meeting_flow(monkeypatch, tmp_path):
+    from notetaker import appshell, paths
+    monkeypatch.setattr(appshell, "helper_send", None)
+    status, body = _post_json("/api/meeting/start", {"title": "x"})
+    assert status == 409 and "Mac app" in body["detail"]  # extension falls back to tab capture
+
+    sent = []
+    monkeypatch.setattr(appshell, "helper_send", lambda line: sent.append(line) or True)
+    monkeypatch.setattr(paths, "DATA", tmp_path)
+    status, body = _post_json("/api/meeting/start", {"title": "Standup", "attendees": ["asha@x.com", "nope"], "lang": "hi"})
+    mid = body["id"]
+    assert status == 200 and sent[0].startswith(f"meeting-start {mid} ") and str(tmp_path) in sent[0]
+    _post_json(f"/api/meeting/{mid}/event", {"event": "started", "mic": "MacBook Air Microphone", "others": "browser"})
+    assert get(f"/api/meeting/{mid}")[1]["status"] == "recording"
+    _, st = _post_json(f"/api/meeting/{mid}/stop", {})
+    assert sent[-1] == "meeting-stop" and st["status"] == "stopping"
+    folder = tmp_path / "meetings" / mid  # what the helper writes on stop
+    folder.mkdir(parents=True)
+    sf.write(folder / "mic.wav", np.zeros(32000, np.float32), 16000)
+    sf.write(folder / "others.wav", np.zeros(32000, np.float32), 16000)
+    _post_json(f"/api/meeting/{mid}/event", {"event": "finished", "seconds": 2})
+    for _ in range(60):
+        st = get(f"/api/meeting/{mid}")[1]
+        if st["status"] in ("done", "error"):
+            break
+        time.sleep(0.5)
+    assert st["status"] == "done", st
+    _, rec = get(f"/api/history/{mid}")
+    assert rec["title"] == "Standup" and rec["attendees"] == ["asha@x.com"] and rec["names"] == {"0": "You"}
+    assert not folder.exists()  # temporary tracks cleaned up

@@ -25,7 +25,7 @@ from .asr import Int4Asr, available_languages
 from .asr_torch import FLEX_REPO, TorchAsr
 from .audio import SR, is_silent
 from .diarize import Diarizer
-from .pipeline import transcribe_meeting
+from .pipeline import transcribe_meeting, transcribe_two_tracks
 
 app = FastAPI(title="on-desktop-notetaker")
 
@@ -126,6 +126,116 @@ def default_engine() -> tuple[str, str]:
     if _has_torch() and setup.flex_present():
         return "flex", os.environ.get("NOTETAKER_MODE", "mixed")
     return "int4", "native"
+
+
+# ---- meetings recorded natively by the app (browser audio + built-in mic) ----------------------
+
+MEETINGS: dict[str, dict] = {}
+
+
+def _worker_tracks(job_id: str, folder: Path, lang: str, engine: str, mode: str, meta: dict) -> None:
+    import shutil
+    try:
+        _set(job_id, status="running", stage="loading")
+        mic, _ = sf.read(folder / "mic.wav", dtype="float32")
+        others, _ = sf.read(folder / "others.wav", dtype="float32")
+
+        def progress(stage: str, frac: float) -> None:
+            _set(job_id, stage=stage, progress=frac)
+
+        doc = transcribe_two_tracks(mic, others, lang=lang, mode=mode, progress=progress,
+                                    asr=ENGINES[engine], diarizer=DIARIZER, lid=ASR)
+        turns = [{k: v for k, v in t.items() if k != "track"} for t in doc["turns"]]
+        _set(job_id, status="done", stage="done", progress=1.0, result=turns, detected_lang=doc["lang"])
+        mixed = Path(tempfile.mkstemp(suffix=".wav")[1])  # one file for playback
+        sf.write(mixed, np.clip(mic + others, -1, 1), SR)
+        history.save({
+            "id": job_id, "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "lang": doc["lang"],
+            "engine": engine, "mode": mode, "duration_s": round(len(mic) / SR, 1),
+            "turn_count": len(turns), "preview": turns[0]["text"][:80] if turns else "",
+            "turns": turns, "names": {"0": "You"}, "source": "meeting", "capture": "app", **meta,
+        }, mixed)
+    except Exception as e:
+        _set(job_id, status="error", error=f"{type(e).__name__}: {e}")
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+@app.post("/api/meeting/start")
+def meeting_start(payload: dict = Body(...)) -> dict:
+    """Extension: the user joined a meeting; the app records browser audio + built-in mic."""
+    from . import paths
+    if appshell.helper_send is None:
+        raise HTTPException(409, "Kiroku isn't running as the Mac app, so it can't record meeting audio itself.")
+    mid = uuid.uuid4().hex[:12]
+    folder = paths.DATA / "meetings" / mid
+    title = str(payload.get("title", "")).strip()[:120]
+    emails = [a.strip() for a in payload.get("attendees") or [] if connectors._EMAIL.match(str(a).strip())][:50]
+    MEETINGS[mid] = {"id": mid, "status": "starting", "started": time.time(), "folder": str(folder),
+                     "lang": str(payload.get("lang") or "hi"), "error": "",
+                     "meta": {**({"title": title} if title else {}), **({"attendees": emails} if emails else {})}}
+    if not appshell.helper_send(f"meeting-start {mid} {folder}"):
+        MEETINGS[mid].update(status="error", error="The Kiroku helper isn't running. Quit and reopen Kiroku.")
+        raise HTTPException(409, MEETINGS[mid]["error"])
+    return {"id": mid}
+
+
+@app.post("/api/meeting/{mid}/stop")
+def meeting_stop(mid: str) -> dict:
+    m = MEETINGS.get(mid)
+    if m is None:
+        raise HTTPException(404, "unknown meeting")
+    if m["status"] in ("starting", "recording") and appshell.helper_send:
+        m["status"] = "stopping"
+        appshell.helper_send("meeting-stop")
+    return meeting_status(mid)
+
+
+@app.post("/api/meeting/{mid}/event")
+def meeting_event(mid: str, payload: dict = Body(...)) -> dict:
+    """From the native helper: started / levels / finished / error."""
+    m = MEETINGS.get(mid)
+    if m is None:
+        raise HTTPException(404, "unknown meeting")
+    ev = payload.get("event")
+    if ev == "started":  # mic is up (or failed); the browser tap reports separately ("others")
+        m.update(status="recording", mic=payload.get("mic"), echo_cancellation=payload.get("echo_cancellation"),
+                 warnings=[f"mic: {payload['mic_error']}"] if payload.get("mic_error") else [])
+    elif ev == "others":
+        if payload.get("others_error"):
+            m.setdefault("warnings", []).append(f"meeting audio: {payload['others_error']}")
+            if m.get("mic") is None and m["status"] == "recording":
+                m.update(status="error", error="Kiroku couldn't record your mic or the meeting audio.")
+        else:
+            m["others"] = payload.get("others")
+    elif ev == "levels":
+        m["levels"] = {"mic": payload.get("mic"), "others": payload.get("others")}
+    elif ev == "error":
+        m.update(status="error", error=str(payload.get("error") or payload.get("others_error") or "recording failed"))
+    elif ev == "finished":
+        engine, mode = default_engine()
+        m["status"] = "processing"
+        with LOCK:
+            JOBS[mid] = {"status": "queued", "stage": "queued", "progress": 0.0, "lang": m["lang"],
+                         "speakers": "auto", "engine": engine, "mode": mode, "result": None,
+                         "error": None, "detected_lang": None}
+        EXECUTOR.submit(_worker_tracks, mid, Path(m["folder"]), m["lang"], engine, mode, m["meta"])
+    return {"ok": True}
+
+
+@app.get("/api/meeting/{mid}")
+def meeting_status(mid: str) -> dict:
+    m = MEETINGS.get(mid)
+    if m is None:
+        raise HTTPException(404, "unknown meeting")
+    out = {k: v for k, v in m.items() if k not in ("folder", "meta")}
+    if mid in JOBS:
+        with LOCK:
+            job = dict(JOBS[mid])
+        out.update(status={"done": "done", "error": "error"}.get(job["status"], "processing"),
+                   stage=job["stage"], progress=job["progress"], turns=len(job["result"] or []),
+                   error=job.get("error") or out.get("error", ""))
+    return out
 
 
 @app.on_event("startup")
